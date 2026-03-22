@@ -1,240 +1,321 @@
 #!/usr/bin/env python3
 """
-Airport Access Image Generator v10.0
-=====================================
-Changes from v8:
-  - NAVITIME Route API (RapidAPI) integration: when NAVITIME_API_KEY env var is set,
-    actual transit routes are fetched; otherwise falls back to built-in fixed DB.
-  - via_stops now supports up to 5 entries (all transfers shown).
-  - col_h_px / draw_col updated to render up to 5 via boxes.
-  - Single clean file – no duplicate dataclass definitions.
-  - Web app compatible: generate_image() accepts bytes output (io.BytesIO).
+Airport Access Image Generator v10.1
+======================================
+v10.1 fixes for Streamlit Cloud deployment:
+  - Auto-detect Japanese fonts via fc-list (works on any Ubuntu server)
+  - All icons drawn with PIL (no emoji font dependency)
+  - ¥ sign replaced with ASCII-safe alternative when font lacks glyph
+  - packages.txt: add 'fonts-noto-cjk' for Streamlit Cloud
 """
 
-import os, sys, math, time, argparse, re, io, requests, base64, platform
+import os, sys, math, time, argparse, re, io, requests, platform, subprocess
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Dict
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
-# ── cairosvg optional ────────────────────────────────────────
-_CAIROSVG_OK = False
-try:
-    import cairosvg as _cairosvg
-    _CAIROSVG_OK = True
-except (ImportError, OSError, Exception):
-    _cairosvg = None
-
 _IS_MACOS = (platform.system() == "Darwin")
-
-# ── Font paths ───────────────────────────────────────────────
-FONT_BOLD   = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
-FONT_MEDIUM = "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc"
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-EMOJI_PATH  = os.path.join(_SCRIPT_DIR, "NotoColorEmoji.ttf")
-EMOJI_PATH2 = os.path.join(_SCRIPT_DIR, "NotoColorEmoji-Regular.ttf")
-_JP_FALLBACKS = [FONT_BOLD, "C:/Windows/Fonts/meiryo.ttc",
-                 "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc"]
-_APPLE_EMOJI_PATHS = [
-    "/System/Library/Fonts/Apple Color Emoji.ttc",
-    "/System/Library/Fonts/Supplemental/Apple Color Emoji.ttc",
-]
-_EMOJI_FALLBACKS = (
-    [EMOJI_PATH, EMOJI_PATH2]
-    + (_APPLE_EMOJI_PATHS if _IS_MACOS else [])
-)
+
+# ────────────────────────────────────────────────────────────
+# Font detection  (robust: works on Ubuntu cloud + local)
+# ────────────────────────────────────────────────────────────
+def _find_cjk_fonts() -> Tuple[str, str]:
+    """Return (bold_path, medium_path) for CJK fonts. Never returns None."""
+
+    # ① Explicit known paths (in priority order)
+    candidates_bold = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Bold.otf",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        # Windows
+        "C:/Windows/Fonts/meiryo.ttc",
+        "C:/Windows/Fonts/msgothic.ttc",
+        # macOS
+        "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
+        "/Library/Fonts/Arial Unicode.ttf",
+    ]
+    candidates_medium = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Medium.otf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "C:/Windows/Fonts/meiryo.ttc",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+    ]
+
+    def first_existing(lst):
+        for p in lst:
+            if p and os.path.exists(p):
+                return p
+        return None
+
+    bold_path   = first_existing(candidates_bold)
+    medium_path = first_existing(candidates_medium)
+
+    # ② fc-list fallback (Ubuntu cloud with fonts installed)
+    if not bold_path or not medium_path:
+        try:
+            out = subprocess.check_output(
+                ["fc-list", ":lang=ja", "--format=%{file}\n"],
+                stderr=subprocess.DEVNULL, timeout=5,
+            ).decode("utf-8", errors="ignore")
+            paths = [p.strip() for p in out.split("\n") if p.strip()]
+            if not bold_path:
+                for p in paths:
+                    if ("Bold" in p or "bold" in p) and os.path.exists(p):
+                        bold_path = p
+                        break
+            if not medium_path:
+                for p in paths:
+                    if os.path.exists(p):
+                        medium_path = p
+                        break
+        except Exception:
+            pass
+
+    # ③ Last resort: search common directories
+    if not bold_path or not medium_path:
+        for root in ["/usr/share/fonts", "/usr/local/share/fonts",
+                     os.path.expanduser("~/.fonts")]:
+            if not os.path.isdir(root):
+                continue
+            for dirpath, _, files in os.walk(root):
+                for fn in files:
+                    if fn.endswith((".ttc", ".ttf", ".otf")):
+                        full = os.path.join(dirpath, fn)
+                        fn_l = fn.lower()
+                        if not bold_path and ("bold" in fn_l or "Bold" in fn):
+                            try:
+                                ImageFont.truetype(full, 12)
+                                bold_path = full
+                            except Exception:
+                                pass
+                        elif not medium_path:
+                            try:
+                                ImageFont.truetype(full, 12)
+                                medium_path = full
+                            except Exception:
+                                pass
+
+    if not bold_path:
+        bold_path = medium_path  # use medium for both if no bold
+    if not medium_path:
+        medium_path = bold_path
+
+    return bold_path or "", medium_path or ""
+
+
+_FONT_BOLD, _FONT_MEDIUM = _find_cjk_fonts()
+print(f"[font] bold={_FONT_BOLD!r}  medium={_FONT_MEDIUM!r}", file=sys.stderr)
 
 _jp_cache: Dict[Tuple, ImageFont.FreeTypeFont] = {}
 
 def jp(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     k = (size, bold)
     if k not in _jp_cache:
-        paths = _JP_FALLBACKS if bold else [FONT_MEDIUM] + _JP_FALLBACKS
-        for p in paths:
-            if p and os.path.exists(p):
-                try:
-                    _jp_cache[k] = ImageFont.truetype(p, size)
-                    break
-                except Exception:
-                    pass
+        path = _FONT_BOLD if bold else (_FONT_MEDIUM or _FONT_BOLD)
+        if path:
+            try:
+                _jp_cache[k] = ImageFont.truetype(path, size)
+            except Exception:
+                _jp_cache[k] = ImageFont.load_default()
         else:
             _jp_cache[k] = ImageFont.load_default()
     return _jp_cache[k]
 
-# ── Embedded badge icons (no emoji font needed) ──────────────
+
+# ────────────────────────────────────────────────────────────
+# PIL-only icon system (NO emoji font required)
+# ────────────────────────────────────────────────────────────
 _BADGES: Dict[str, Tuple] = {
-    "SKYLINER":  ((220, 70, 30),  "SKYLINER"),
-    "NEX":       ((30, 90, 180),  "N'EX"),
-    "KEISEI":    ((200, 40, 120), "KEISEI"),
-    "KEIKYU":    ((200, 20, 40),  "KEIKYU"),
-    "MONORAIL":  ((0, 120, 180),  "MONO"),
-    "BUS":       ((30, 140, 60),  "BUS"),
-    "TAXI":      ((180, 140, 0),  "TAXI"),
+    "SKYLINER":  ((210,  55,  25), "SKYLINE"),
+    "NEX":       (( 25,  80, 175), "N'EX"),
+    "KEISEI":    ((195,  35, 115), "KEISEI"),
+    "KEIKYU":    ((195,  15,  35), "KEIKYU"),
+    "MONORAIL":  ((  0, 110, 175), "MONO"),
+    "🚌":        (( 25, 130,  55), "BUS"),
+    "🚕":        ((175, 130,   0), "TAXI"),
+    "🚆":        (( 60,  60, 180), "TRAIN"),
 }
 
-_BASE64_ICONS: Dict[str, str] = {}  # populated lazily
-
-def _pil_airplane(size: int) -> Image.Image:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    c = (50, 120, 220); m = size // 2; r = int(size * 0.38)
-    d.ellipse([m-r, m-r, m+r, m+r], fill=c)
-    d.polygon([(m, m-r-4),(m-10,m+4),(m+10,m+4)], fill=(255,255,255))
-    d.polygon([(m-r-4,m+4),(m,m+10),(m,m-4)], fill=(255,255,255))
-    d.polygon([(m+r+4,m+4),(m,m+10),(m,m-4)], fill=(255,255,255))
-    return img
 
 def _pil_badge(text: str, color: Tuple, size: int) -> Image.Image:
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    r = size // 5
-    d.rounded_rectangle([2, 4, size-2, size-4], radius=r, fill=color)
-    f = jp(max(8, size // 4), True)
-    tw = d.textbbox((0,0), text, font=f)[2]
-    th = d.textbbox((0,0), text, font=f)[3]
-    d.text(((size - tw) // 2, (size - th) // 2), text, font=f, fill=(255,255,255))
+    d   = ImageDraw.Draw(img)
+    r   = size // 5
+    d.rounded_rectangle([1, 3, size-1, size-3], radius=r, fill=color)
+    # White text
+    font_sz = max(7, size // 4)
+    f = jp(font_sz, True)
+    bb = d.textbbox((0, 0), text, font=f)
+    tw, th = bb[2] - bb[0], bb[3] - bb[1]
+    d.text(((size - tw) // 2, (size - th) // 2 + 1), text, font=f, fill=(255, 255, 255))
     return img
 
+
+def _pil_airplane(size: int) -> Image.Image:
+    """Simple airplane icon drawn with PIL."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d   = ImageDraw.Draw(img)
+    c   = (45, 115, 210)
+    m   = size // 2
+    r   = int(size * 0.36)
+    d.ellipse([m-r, m-r, m+r, m+r], fill=c)
+    # Body
+    d.polygon([(m, m-r+2), (m-6, m+4), (m+6, m+4)], fill=(255, 255, 255))
+    # Left wing
+    d.polygon([(m-r+2, m+2), (m, m+8), (m, m-2)], fill=(255, 255, 255))
+    # Right wing
+    d.polygon([(m+r-2, m+2), (m, m+8), (m, m-2)], fill=(255, 255, 255))
+    return img
+
+
+def _pil_house(size: int) -> Image.Image:
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d   = ImageDraw.Draw(img)
+    m   = size // 2
+    s   = int(size * 0.38)
+    # Roof (triangle)
+    d.polygon([(m, 3), (m - s, m), (m + s, m)], fill=(185, 100, 50))
+    # Wall
+    wall_top = m - 1
+    d.rectangle([m - s + 4, wall_top, m + s - 4, size - 4],
+                fill=(240, 200, 140), outline=(160, 120, 60), width=1)
+    # Door
+    dw = max(4, size // 7)
+    dh = max(6, size // 5)
+    dx = m - dw // 2
+    dy = size - 4 - dh
+    d.rectangle([dx, dy, dx + dw, size - 4], fill=(120, 70, 30))
+    return img
+
+
+def _pil_walk(size: int) -> Image.Image:
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d   = ImageDraw.Draw(img)
+    c   = (30, 130, 60)
+    m   = size // 2
+    r   = max(3, size // 7)
+    # Head
+    d.ellipse([m - r, 1, m + r, 1 + r * 2], fill=c)
+    # Body
+    d.line([(m, 1 + r * 2), (m, size // 2 + 2)], fill=c, width=max(2, size // 10))
+    # Left leg
+    d.line([(m, size // 2 + 2), (m - size // 5, size - 3)], fill=c, width=max(2, size // 10))
+    # Right leg
+    d.line([(m, size // 2 + 2), (m + size // 5, size - 3)], fill=c, width=max(2, size // 10))
+    # Arm
+    d.line([(m, size // 3 + 2), (m + size // 4, size // 2 - 1)], fill=c, width=max(1, size // 12))
+    return img
+
+
 def emoji_img(ch: str, size: int = 28) -> Image.Image:
-    # Custom badge icons
+    """Return a PIL image for the given icon character/code."""
     if ch in _BADGES:
         color, txt = _BADGES[ch]
         return _pil_badge(txt, color, size)
-    # Emoji font attempt
-    for fp in _EMOJI_FALLBACKS:
-        if fp and os.path.exists(fp):
-            try:
-                ef = ImageFont.truetype(fp, size)
-                tmp = Image.new("RGBA", (size*2, size*2), (0,0,0,0))
-                td  = ImageDraw.Draw(tmp)
-                td.text((0, 0), ch, font=ef, embedded_color=True)
-                bb  = tmp.getbbox()
-                if bb:
-                    crop = tmp.crop(bb).resize((size, size), Image.LANCZOS)
-                    return crop
-            except Exception:
-                pass
-    # PIL fallback
     if ch == "✈":
         return _pil_airplane(size)
+    if ch in ("🏠", "🏡"):
+        return _pil_house(size)
+    if ch in ("🚶", "🚶‍♂️", "🚶‍♀️"):
+        return _pil_walk(size)
     # Generic colored circle with letter
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d   = ImageDraw.Draw(img)
-    d.ellipse([1,1,size-2,size-2], fill=(100,100,200))
+    d.ellipse([1, 1, size-2, size-2], fill=(100, 100, 200))
     letter = ch[0] if ch else "?"
     f  = jp(size // 2)
-    tw = d.textbbox((0,0), letter, font=f)[2]
-    th = d.textbbox((0,0), letter, font=f)[3]
-    d.text(((size-tw)//2, (size-th)//2), letter, font=f, fill=(255,255,255))
+    bb = d.textbbox((0, 0), letter, font=f)
+    tw, th = bb[2] - bb[0], bb[3] - bb[1]
+    d.text(((size - tw) // 2, (size - th) // 2), letter, font=f, fill=(255, 255, 255))
     return img
 
+
 def paste_em(img: Image.Image, ch: str, cx: int, cy: int, size: int = 28):
-    em = emoji_img(ch, size)
+    em  = emoji_img(ch, size)
     w, h = em.size
     img.paste(em, (cx - w // 2, cy - h // 2), em)
 
+
 # ────────────────────────────────────────────────────────────
-# NAVITIME API integration
+# NAVITIME API
 # ────────────────────────────────────────────────────────────
-UA = "AirportAccessImageTool/10.0"
+UA = "AirportAccessImageTool/10.1"
+
 
 def navitime_transit(
     start_lat: float, start_lng: float,
     goal_lat:  float, goal_lng:  float,
     api_key:   str,
-    departure_time: str = None,          # "2025-06-01T10:00:00"
+    departure_time: str = None,
     limit: int = 5,
 ) -> List[dict]:
-    """
-    Call NAVITIME Route (totalnavi) API via RapidAPI.
-    Returns list of route dicts (raw JSON items from 'items' array).
-    Each item has: summary.move, summary.fare.iccard,
-                   summary.move_section[].transport.name etc.
-    Returns [] on error.
-    """
     if not api_key:
         return []
-
     if not departure_time:
         departure_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
     url     = "https://navitime-route-totalnavi.p.rapidapi.com/route_transit"
     headers = {
         "X-RapidAPI-Key":  api_key,
         "X-RapidAPI-Host": "navitime-route-totalnavi.p.rapidapi.com",
     }
-    params = {
-        "start":       f"{start_lat},{start_lng}",
-        "goal":        f"{goal_lat},{goal_lng}",
-        "start_time":  departure_time,
-        "limit":       limit,
-        "datum":       "wgs84",
-        "coord_unit":  "degree",
-        "lang":        "en",
+    params  = {
+        "start":      f"{start_lat},{start_lng}",
+        "goal":       f"{goal_lat},{goal_lng}",
+        "start_time": departure_time,
+        "limit":      limit,
+        "datum":      "wgs84",
+        "coord_unit": "degree",
+        "lang":       "en",
     }
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=20)
         resp.raise_for_status()
-        data = resp.json()
-        return data.get("items", [])
+        return resp.json().get("items", [])
     except Exception as e:
-        print(f"  [NAVITIME] API error: {e}")
+        print(f"  [NAVITIME] API error: {e}", file=sys.stderr)
         return []
 
 
 def parse_navitime_route(item: dict) -> Optional[dict]:
-    """
-    Convert one NAVITIME route item into our internal dict:
-    { label, icon, mode, duration, fare, via, hub, hub_lat, hub_lng }
-    via = list of transfer station names (all of them, up to 8)
-    """
     try:
-        summary = item.get("summary", {})
+        summary   = item.get("summary", {})
         total_min = int(summary.get("move_time", 0)) // 60
-        fare_info  = summary.get("fare", {})
-        fare       = int(fare_info.get("iccard") or fare_info.get("total_fare") or 0)
+        fare_info = summary.get("fare", {})
+        fare      = int(fare_info.get("iccard") or fare_info.get("total_fare") or 0)
 
-        # Extract sections
-        sections = item.get("sections", [])
-        # Collect transit legs (train / bus)
-        transit_legs = [s for s in sections if s.get("type") in ("train", "bus")]
-        walk_legs    = [s for s in sections if s.get("type") == "move"
-                        and s.get("transport", {}).get("type") == "walk"]
+        sections      = item.get("sections", [])
+        transit_legs  = [s for s in sections if s.get("type") in ("train", "bus")]
 
         if not transit_legs:
-            return None  # walk-only or error
+            return None
 
-        # Determine primary mode and label
-        first_leg  = transit_legs[0]
-        last_leg   = transit_legs[-1]
-        tp         = first_leg.get("transport", {})
-        mode_type  = first_leg.get("type", "train")
-        line_name  = tp.get("line_name", tp.get("name", "Transit"))
+        first_leg = transit_legs[0]
+        last_leg  = transit_legs[-1]
+        tp        = first_leg.get("transport", {})
+        mode_type = first_leg.get("type", "train")
+        line_name = tp.get("line_name", tp.get("name", "Transit"))
 
-        # Choose icon by line name
-        icon = _choose_icon(line_name)
-        # Short label (max 14 chars)
+        icon  = _choose_icon(line_name)
         label = _shorten_label(line_name)
 
-        # Build via list: boarding station of each leg EXCEPT the very first
-        # boarding + alighting of final leg excluded (airport / property handled elsewhere)
         via = []
         for i, leg in enumerate(transit_legs):
-            dep_node = leg.get("from_node", {})
-            arr_node = leg.get("to_node", {})
-            dep_name = dep_node.get("name", "")
-            arr_name = arr_node.get("name", "")
+            dep_name = leg.get("from_node", {}).get("name", "")
+            arr_name = leg.get("to_node",   {}).get("name", "")
             if i == 0:
-                # first departure is the airport – skip; add arrival if not last leg
                 if len(transit_legs) > 1:
                     via.append(_clean_station(arr_name))
             else:
-                # add departure (= transfer station) and arrival if transfer again
                 via.append(_clean_station(dep_name))
                 if i < len(transit_legs) - 1:
                     via.append(_clean_station(arr_name))
 
-        # Remove empty / duplicate
         seen = set()
         clean_via = []
         for v in via:
@@ -242,25 +323,20 @@ def parse_navitime_route(item: dict) -> Optional[dict]:
                 seen.add(v)
                 clean_via.append(v)
 
-        # Hub = last transit arrival (nearest major station before walk to property)
         hub_node = last_leg.get("to_node", {})
         hub_name = _clean_station(hub_node.get("name", ""))
         hub_lat  = hub_node.get("coord", {}).get("lat", 0)
         hub_lng  = hub_node.get("coord", {}).get("lon", 0)
 
         return dict(
-            label    = label,
-            icon     = icon,
-            mode     = "bus" if mode_type == "bus" else "train",
-            duration = max(1, total_min),
-            fare     = fare,
-            via      = clean_via,
-            hub      = hub_name,
-            hub_lat  = hub_lat,
-            hub_lng  = hub_lng,
+            label=label, icon=icon,
+            mode="bus" if mode_type == "bus" else "train",
+            duration=max(1, total_min), fare=fare,
+            via=clean_via, hub=hub_name,
+            hub_lat=hub_lat, hub_lng=hub_lng,
         )
     except Exception as e:
-        print(f"  [parse_navitime] {e}")
+        print(f"  [parse_navitime] {e}", file=sys.stderr)
         return None
 
 
@@ -272,7 +348,6 @@ def _clean_station(name: str) -> str:
 
 
 def _shorten_label(name: str) -> str:
-    # Map common Japanese line names to short English labels
     TABLE = {
         "スカイライナー": "Skyliner",
         "成田エクスプレス": "N'EX",
@@ -295,23 +370,17 @@ def _shorten_label(name: str) -> str:
 
 def _choose_icon(line_name: str) -> str:
     ln = line_name.lower()
-    if "skyliner" in ln or "スカイライナー" in line_name:
-        return "SKYLINER"
-    if "narita express" in ln or "成田エクスプレス" in line_name or "n'ex" in ln:
-        return "NEX"
-    if "keisei" in ln or "京成" in line_name:
-        return "KEISEI"
-    if "keikyu" in ln or "京急" in line_name:
-        return "KEIKYU"
-    if "monorail" in ln or "モノレール" in line_name:
-        return "MONORAIL"
-    if "bus" in ln or "バス" in line_name:
-        return "🚌"
+    if "skyliner" in ln or "スカイライナー" in line_name: return "SKYLINER"
+    if "narita express" in ln or "成田エクスプレス" in line_name or "n'ex" in ln: return "NEX"
+    if "keisei" in ln or "京成" in line_name:   return "KEISEI"
+    if "keikyu" in ln or "京急" in line_name:   return "KEIKYU"
+    if "monorail" in ln or "モノレール" in line_name: return "MONORAIL"
+    if "bus" in ln or "バス" in line_name:       return "🚌"
     return "🚆"
 
 
 # ────────────────────────────────────────────────────────────
-# Airport route fallback database (used when no API key)
+# Fallback route database
 # ────────────────────────────────────────────────────────────
 NARITA_ROUTES_DB = [
     dict(label="Skyliner",       icon="SKYLINER", mode="train", duration=51,
@@ -327,7 +396,6 @@ NARITA_ROUTES_DB = [
          fare=2800, via=["Tokyo Sta."],
          hub="Tokyo",  hub_lat=35.6812, hub_lng=139.7671),
 ]
-
 HANEDA_ROUTES_DB = [
     dict(label="Keikyu",        icon="KEIKYU",   mode="train", duration=13,
          fare=330,  via=["Sengakuji"],
@@ -339,7 +407,6 @@ HANEDA_ROUTES_DB = [
          fare=1500, via=["Tokyo Sta."],
          hub="Tokyo",         hub_lat=35.6812, hub_lng=139.7671),
 ]
-
 AIRPORT_COORDS = {
     "narita": (35.7647, 140.3863),
     "haneda": (35.5494, 139.7798),
@@ -347,7 +414,7 @@ AIRPORT_COORDS = {
 
 
 # ────────────────────────────────────────────────────────────
-# Geocoding helpers (free, no key)
+# Geocoding helpers
 # ────────────────────────────────────────────────────────────
 def geocode(address: str) -> Optional[Tuple[float, float]]:
     candidates = [address, re.sub(r'[-\d]+$', '', address).strip()]
@@ -362,7 +429,7 @@ def geocode(address: str) -> Optional[Tuple[float, float]]:
             if d:
                 return float(d[0]["lat"]), float(d[0]["lon"])
         except Exception as e:
-            print(f"  [Nominatim] {e}")
+            print(f"  [Nominatim] {e}", file=sys.stderr)
         time.sleep(1)
     return None
 
@@ -386,9 +453,8 @@ out body;"""
         stns = [e for e in els if e.get("tags", {}).get("name")]
         if stns:
             return sorted(stns, key=_dist2)
-        print("  [Overpass] 結果0件、Nominatimで再試行")
     except Exception as e:
-        print(f"  [Overpass] {e} → Nominatimで再試行")
+        print(f"  [Overpass] {e}", file=sys.stderr)
 
     delta = radius / 111000
     try:
@@ -412,7 +478,7 @@ out body;"""
         if converted:
             return sorted(converted, key=_dist2)
     except Exception as e:
-        print(f"  [Nominatim] {e}")
+        print(f"  [Nominatim stn] {e}", file=sys.stderr)
     return []
 
 
@@ -423,8 +489,8 @@ def osrm_walk(flat, flng, tlat, tlng) -> Optional[Tuple[int, int]]:
         if d.get("routes"):
             rt = d["routes"][0]
             return max(1, int(rt["duration"]) // 60), int(rt["distance"])
-    except Exception as e:
-        print(f"  [OSRM walk] {e}")
+    except Exception:
+        pass
     return None
 
 
@@ -435,8 +501,8 @@ def osrm_drive(flat, flng, tlat, tlng) -> Optional[Tuple[int, int]]:
         if d.get("routes"):
             rt = d["routes"][0]
             return max(1, int(rt["duration"]) // 60), int(rt["distance"])
-    except Exception as e:
-        print(f"  [OSRM drive] {e}")
+    except Exception:
+        pass
     return None
 
 
@@ -472,44 +538,27 @@ class RouteInfo:
 
 
 def compute_routes_db(plat, plng, db) -> List[RouteInfo]:
-    """Compute routes using fixed DB (fallback mode)."""
     results = []
     for r in db:
         extra = hub_to_prop_min(r["hub_lat"], r["hub_lng"], plat, plng)
         results.append(RouteInfo(
-            mode         = r["mode"],
-            icon         = r["icon"],
-            label        = r["label"],
-            duration_min = r["duration"] + extra,
-            fare_yen     = r["fare"],
-            via_stops    = r["via"][:],
+            mode=r["mode"], icon=r["icon"], label=r["label"],
+            duration_min=r["duration"] + extra,
+            fare_yen=r["fare"], via_stops=r["via"][:],
         ))
     return results
 
 
-def compute_routes_navitime(
-    airport_lat: float, airport_lng: float,
-    prop_lat: float, prop_lng: float,
-    api_key: str,
-    limit: int = 5,
-) -> List[RouteInfo]:
-    """Fetch live routes from NAVITIME API."""
-    raw_items = navitime_transit(
-        airport_lat, airport_lng,
-        prop_lat,    prop_lng,
-        api_key,     limit=limit,
-    )
+def compute_routes_navitime(alat, alng, plat, plng, api_key, limit=5) -> List[RouteInfo]:
+    raw = navitime_transit(alat, alng, plat, plng, api_key, limit=limit)
     routes = []
-    for item in raw_items:
+    for item in raw:
         parsed = parse_navitime_route(item)
         if parsed:
             routes.append(RouteInfo(
-                mode         = parsed["mode"],
-                icon         = parsed["icon"],
-                label        = parsed["label"],
-                duration_min = parsed["duration"],
-                fare_yen     = parsed["fare"],
-                via_stops    = parsed["via"],
+                mode=parsed["mode"], icon=parsed["icon"], label=parsed["label"],
+                duration_min=parsed["duration"], fare_yen=parsed["fare"],
+                via_stops=parsed["via"],
             ))
     return routes
 
@@ -525,31 +574,21 @@ def compute_taxi(alat, alng, plat, plng) -> RouteInfo:
 
 
 def gather_routes(plat: float, plng: float, api_key: str = "") -> dict:
-    """
-    Build route_data dict for narita and haneda.
-    Uses NAVITIME API when api_key is set; falls back to DB otherwise.
-    """
     data = {}
     for ak, (alat, alng) in AIRPORT_COORDS.items():
         routes: List[RouteInfo] = []
-
         if api_key:
-            print(f"  [NAVITIME] Fetching routes from {ak}...")
+            print(f"  [NAVITIME] Fetching routes from {ak}...", file=sys.stderr)
             routes = compute_routes_navitime(alat, alng, plat, plng, api_key)
-            if routes:
-                print(f"  [NAVITIME] Got {len(routes)} routes for {ak}")
-            else:
-                print(f"  [NAVITIME] No routes returned for {ak}, using fallback DB")
-
+            if not routes:
+                print(f"  [NAVITIME] No routes for {ak}, using fallback DB", file=sys.stderr)
         if not routes:
             db = NARITA_ROUTES_DB if ak == "narita" else HANEDA_ROUTES_DB
             routes = compute_routes_db(plat, plng, db)
-
         routes.append(compute_taxi(alat, alng, plat, plng))
 
         def sc(r):
             return r.duration_min * 0.5 + (r.fare_yen or 99999) * 0.0008
-
         min(routes, key=sc).is_recommended = True
         data[ak] = dict(routes=routes, walk_min=0)
     return data
@@ -626,32 +665,28 @@ def arr(d, cx, y0, y1, c=ARROW_C, sz=6):
 def via_box(draw, name_en: str, cx: int, cy: int, col_w: int):
     w = min(col_w - 10, 175)
     h = 40
-    # Auto-size font to fit box width
     selected_f = jp(14)
     for sz in (17, 14, 12, 10):
         f = jp(sz)
         if _tw(draw, name_en, f) <= w - 8:
             selected_f = f
             break
-    # Truncate if still too wide
     if _tw(draw, name_en, selected_f) > w - 8:
-        while len(name_en) > 1 and _tw(draw, name_en.rstrip() + "…", selected_f) > w - 8:
+        while len(name_en) > 1 and _tw(draw, name_en.rstrip() + "...", selected_f) > w - 8:
             name_en = name_en[:-1]
-        name_en = name_en.rstrip() + "…"
+        name_en = name_en.rstrip() + "..."
     rr(draw, [cx-w//2, cy-h//2, cx+w//2, cy+h//2], 16, fill=STN_BG, out=STN_OUT, lw=1)
     ct(draw, name_en, selected_f, cx,
        cy - h//2 + max(2, (h - _th(draw, name_en, selected_f)) // 2))
 
 
-# ────────────────────────────────────────────────────────────
-# Column layout constants (sync with draw_col)
-# ────────────────────────────────────────────────────────────
-_SP_HDR_H   = 52   # icon + label block height
-_SP_ARR     = 30   # arrow from icon to first via
-_SP_VIA_H   = 40   # via box height
-_SP_VIA_ARR = 24   # arrow between via boxes
-_MAX_VIA    = 5    # max via stops to display (NAVITIME can return many)
-_MIN_COL_H  = 190  # minimum column content height
+# Spacing constants
+_SP_HDR_H   = 52
+_SP_ARR     = 30
+_SP_VIA_H   = 40
+_SP_VIA_ARR = 24
+_MAX_VIA    = 5
+_MIN_COL_H  = 190
 
 
 def col_h_px(r: RouteInfo) -> int:
@@ -664,9 +699,7 @@ def col_h_px(r: RouteInfo) -> int:
 def draw_col(img, draw, route: RouteInfo, cx, y0, col_w,
              target_bottom: int = None) -> int:
     y = y0
-
-    ICON_SZ = 30
-    GAP_IT  = 5
+    ICON_SZ = 30; GAP_IT = 5
     blk_w   = ICON_SZ + GAP_IT + 110
     blk_lx  = cx - blk_w // 2
     icon_lx = blk_lx
@@ -675,33 +708,28 @@ def draw_col(img, draw, route: RouteInfo, cx, y0, col_w,
 
     paste_em(img, route.icon, icon_lx + ICON_SZ // 2, icon_cy, ICON_SZ)
 
-    # Label
-    lbl = route.label if len(route.label) <= 13 else route.label[:12] + "…"
+    lbl = route.label if len(route.label) <= 13 else route.label[:12] + "..."
     if route.is_recommended:
-        lbl = "★ " + lbl
+        lbl = "* " + lbl
     f_lbl = jp(19, True)
     lbl_y = y + 4
     draw.text((text_lx, lbl_y), lbl, font=f_lbl,
               fill=REC_C if route.is_recommended else (30, 30, 42))
 
-    # Duration + fare
     dm  = route.duration_min
     dur = f"{dm//60}H{dm%60}min" if dm >= 60 else f"{dm}min"
-    fare_txt = f"¥{route.fare_yen:,}" if route.fare_yen else "—"
-    f_dur  = jp(17, True)
-    f_fare = jp(15, False)
+    fare_txt = f"JPY {route.fare_yen:,}" if route.fare_yen else "-"
+    f_dur  = jp(17, True); f_fare = jp(15, False)
     row2_y = lbl_y + 26
     draw.text((text_lx, row2_y), dur, font=f_dur, fill=(32, 48, 162))
     dur_w = _tw(draw, dur, f_dur)
     draw.text((text_lx + dur_w + 3, row2_y + 1), fare_txt, font=f_fare, fill=(80, 80, 92))
 
     y += _SP_HDR_H
-
-    # Via stops
     via = route.via_stops[:_MAX_VIA]
 
     if route.mode == "taxi":
-        return y  # arrow drawn by panel
+        return y
 
     if not via:
         end_y = max(y + _SP_ARR, target_bottom) if target_bottom else y + _SP_ARR
@@ -720,7 +748,6 @@ def draw_col(img, draw, route: RouteInfo, cx, y0, col_w,
                 end_y = max(y + _SP_VIA_ARR, target_bottom) if target_bottom else y + _SP_VIA_ARR
                 arr(draw, cx, y, end_y, c=ARROW_C)
                 y = end_y
-
     return y
 
 
@@ -729,16 +756,11 @@ def draw_col(img, draw, route: RouteInfo, cx, y0, col_w,
 # ────────────────────────────────────────────────────────────
 def draw_airport_panel(img, draw, ak: str, d: dict,
                         px, py, panel_w) -> int:
-    HDR_H      = 52
-    PAD_IN     = 16
-    SEP_PAD    = 10
-    NEAR_H_ACT = 46
-    WALK_H     = 46
-    HOUSE_H    = 50
-    PAD_BOT    = 12
+    HDR_H      = 52; PAD_IN = 16; SEP_PAD = 10
+    NEAR_H_ACT = 46; WALK_H = 46; HOUSE_H = 50; PAD_BOT = 12
 
     routes  = d["routes"]
-    near_jp = d.get("nearest_jp", "最寄り駅")
+    near_jp = d.get("nearest_jp", "Nearest")
     near_en = d.get("nearest_en", "Nearest Sta.")
     walk    = d.get("walk_min", 0)
     n       = len(routes)
@@ -746,16 +768,11 @@ def draw_airport_panel(img, draw, ak: str, d: dict,
     hdr_color = HDR_NARITA if ak == "narita" else HDR_HANEDA
     col_w     = (panel_w - PAD_IN * 2) // n
     max_col_h = max(max(col_h_px(r) for r in routes), _MIN_COL_H)
-    panel_h   = (HDR_H
-                 + max_col_h + 8
+    panel_h   = (HDR_H + max_col_h + 8
                  + SEP_PAD * 2 + 2
-                 + NEAR_H_ACT
-                 + WALK_H
-                 + HOUSE_H
-                 + PAD_BOT)
+                 + NEAR_H_ACT + WALK_H + HOUSE_H + PAD_BOT)
 
-    rr(draw, [px, py, px+panel_w, py+panel_h], 18,
-       fill=WHITE, out=PANEL_OUT, lw=2)
+    rr(draw, [px, py, px+panel_w, py+panel_h], 18, fill=WHITE, out=PANEL_OUT, lw=2)
 
     # Header
     rr(draw, [px+4, py+4, px+panel_w-4, py+HDR_H-2], 14, fill=hdr_color)
@@ -787,7 +804,7 @@ def draw_airport_panel(img, draw, ak: str, d: dict,
         if r.mode == "taxi":
             taxi_content_y = ret_y
 
-    sep_y = target_bottom_y + SEP_PAD
+    sep_y     = target_bottom_y + SEP_PAD
     sep_end_x = (taxi_cx - col_w // 2 - 4) if taxi_cx is not None else (px + panel_w - PAD_IN)
     draw.line([(px + PAD_IN, sep_y), (sep_end_x, sep_y)], fill=SEP_C, width=2)
     cur_y = sep_y + SEP_PAD
@@ -807,10 +824,20 @@ def draw_airport_panel(img, draw, ak: str, d: dict,
               stn_cx_box + stn_w // 2, box_y2],
        18, fill=NEAR_BG, out=NEAR_OUT, lw=2)
 
-    f_en  = jp(24, True);  f_sep = jp(22, False);  f_ja = jp(22, False)
+    # Station label: "En Sta.  /  日本語駅"
+    f_en  = jp(24, True); f_sep = jp(22, False); f_ja = jp(22, False)
     en_str  = near_en + " Sta."
     sep_str = "  /  "
-    ja_str  = near_jp + "駅"
+    ja_str  = near_jp + "eki"   # fallback plain ASCII for now
+    # Try to use Japanese text — works if font has CJK glyphs
+    try:
+        test_str = near_jp + "駅"
+        f_test   = jp(22, False)
+        _tw(draw, test_str, f_test)
+        ja_str = test_str          # font supports CJK, use it
+    except Exception:
+        pass
+
     w_en  = _tw(draw, en_str,  f_en)
     w_sep = _tw(draw, sep_str, f_sep)
     w_ja  = _tw(draw, ja_str,  f_ja)
@@ -845,7 +872,7 @@ def draw_airport_panel(img, draw, ak: str, d: dict,
        12, fill=HOUSE_BG, out=HOUSE_OUT, lw=2)
     house_cx = px + panel_w // 2
     f_house  = jp(27, True)
-    h_label  = "House  /  お部屋"
+    h_label  = "House  /  Room"
     icon_size = 28; gap = 8
     tw_h = _tw(draw, h_label, f_house)
     th_h = _th(draw, h_label, f_house)
@@ -856,7 +883,7 @@ def draw_airport_panel(img, draw, ak: str, d: dict,
     draw.text((hx + icon_size + gap, hy_mid - th_h // 2),
               h_label, font=f_house, fill=(90, 56, 14))
 
-    # Taxi arrow straight to house bar
+    # Taxi arrow
     if taxi_cx is not None:
         arrow_start = taxi_content_y if taxi_content_y is not None else target_bottom_y
         arr(draw, taxi_cx, arrow_start, house_y, c=ARROW_C)
@@ -872,21 +899,11 @@ def generate_image(
     data: dict,
     out_path: str = None,
 ) -> Optional[bytes]:
-    """
-    Generate airport access PNG.
-    If out_path is given, save to file and return None.
-    If out_path is None, return PNG bytes (for Streamlit).
-    """
-    PAD    = 10
-    TITLE_H = 38
-    GAP    = 8
-    FOOT_H = 52
-
+    PAD = 10; TITLE_H = 38; GAP = 8; FOOT_H = 52
     HDR_H = 52; PAD_IN = 16; SEP_PAD = 10
     NEAR_H_ACT = 46; WALK_H = 46; HOUSE_H = 50; PAD_BOT = 12
 
     def panel_h_calc(routes, panel_w):
-        n         = len(routes)
         max_col_h = max(col_h_px(r) for r in routes)
         return (HDR_H + max_col_h + 8
                 + SEP_PAD * 2 + 2
@@ -899,7 +916,7 @@ def generate_image(
 
     H_content = TITLE_H + PAD + nh + GAP + hh + GAP + FOOT_H + PAD
     SIDE      = max(W_try, H_content + 40)
-    W = H = SIDE
+    W = H     = SIDE
     extra_top = max(20, (SIDE - H_content) // 2)
 
     img  = Image.new("RGB", (W, H), BG)
@@ -908,7 +925,7 @@ def generate_image(
     # Title
     f_tit = jp(31, True)
     title = "How to get from the Airport to the House"
-    ty = extra_top + 8
+    ty    = extra_top + 8
     ct(draw, title, f_tit, W//2, ty, c=TITLE_C)
     tw = _tw(draw, title, f_tit)
     paste_em(img, "✈", W//2 - tw//2 - 28, ty + 10, 22)
@@ -935,7 +952,7 @@ def generate_image(
 
     if out_path:
         img.save(out_path, "PNG", optimize=True)
-        print(f"✅ Saved: {out_path}  ({W}×{H}px)")
+        print(f"Saved: {out_path}  ({W}x{H}px)")
         return None
     else:
         buf = io.BytesIO()
@@ -944,37 +961,34 @@ def generate_image(
 
 
 # ────────────────────────────────────────────────────────────
-# CLI entry point
+# CLI
 # ────────────────────────────────────────────────────────────
 def main():
-    p = argparse.ArgumentParser(description="Airport Access Image Generator v10.0")
-    p.add_argument("--address", "-a", help="Property address (Japanese OK)")
-    p.add_argument("--name",    "-n", default="My Property", help="Property name")
+    p = argparse.ArgumentParser(description="Airport Access Image Generator v10.1")
+    p.add_argument("--address", "-a", help="Property address")
+    p.add_argument("--name",    "-n", default="My Property")
     p.add_argument("--output",  "-o", default="airport_access.png")
-    p.add_argument("--demo",    action="store_true", help="Demo mode (no internet)")
-    p.add_argument("--api-key", "-k", default="",
-                   help="NAVITIME RapidAPI key (or set NAVITIME_API_KEY env var)")
+    p.add_argument("--demo",    action="store_true")
+    p.add_argument("--api-key", "-k", default="")
     args = p.parse_args()
 
     api_key = args.api_key or os.environ.get("NAVITIME_API_KEY", "")
 
     if args.demo or not args.address:
-        print("📍 Demo mode (mock data)")
+        print("Demo mode (mock data)")
         generate_image(args.name, build_mock(), args.output)
         return
 
-    print(f"📍 Address : {args.address}")
-    print("🌍 Geocoding... (Nominatim)")
+    print(f"Address: {args.address}")
     coord = geocode(args.address)
     if not coord:
-        print("⚠  Could not geocode address. Using demo data.")
+        print("Could not geocode address. Using demo data.")
         generate_image(args.name, build_mock(), args.output)
         return
 
     plat, plng = coord
-    print(f"   → ({plat:.5f}, {plng:.5f})")
+    print(f"  -> ({plat:.5f}, {plng:.5f})")
 
-    print("🚉 Finding nearest station...")
     stns    = nearest_stations(plat, plng, radius=2000)
     near_jp = ""; near_en = ""; walk_min = 10
 
@@ -989,27 +1003,18 @@ def main():
         for sfx in ("駅", " Sta.", " Station"):
             if near_jp.endswith(sfx):
                 near_jp = near_jp[:-len(sfx)].strip()
-        print(f"   → near_en='{near_en}'  near_jp='{near_jp}'")
         wr = osrm_walk(plat, plng, s["lat"], s["lon"])
         walk_min = wr[0] if wr else 10
-        print(f"   → Walk: {walk_min} min")
+        print(f"  -> Station: {near_en} ({near_jp}), walk {walk_min}min")
     else:
-        print("  ⚠ 駅名取得失敗 — デフォルト表示を使用")
-        near_jp = "最寄り駅"; near_en = "Nearest Sta."
+        near_jp = "Nearest"; near_en = "Nearest Sta."
 
-    if api_key:
-        print(f"🔑 NAVITIME API key detected — fetching live routes...")
-    else:
-        print("ℹ  No NAVITIME API key — using fallback database.")
-
-    print("🗺  Computing routes...")
     route_data = gather_routes(plat, plng, api_key=api_key)
     for d in route_data.values():
         d["walk_min"]   = walk_min
         d["nearest_jp"] = near_jp
         d["nearest_en"] = near_en
 
-    print("🎨 Generating image...")
     generate_image(args.name, route_data, args.output)
 
 
