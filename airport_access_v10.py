@@ -338,11 +338,6 @@ def _shorten_label(name: str) -> str:
 
 def _choose_icon(line_name: str) -> str:
     ln = line_name.lower()
-    if "skyliner" in ln or "スカイライナー" in line_name: return "SKYLINER"
-    if "narita express" in ln or "成田エクスプレス" in line_name or "n'ex" in ln: return "NEX"
-    if "keisei" in ln or "京成" in line_name:   return "KEISEI"
-    if "keikyu" in ln or "京急" in line_name:   return "KEIKYU"
-    if "monorail" in ln or "モノレール" in line_name: return "MONORAIL"
     if "bus" in ln or "バス" in line_name:       return "🚌"
     return "🚆"
 
@@ -351,13 +346,13 @@ def _choose_icon(line_name: str) -> str:
 # Fallback route database
 # ────────────────────────────────────────────────────────────
 NARITA_ROUTES_DB = [
-    dict(label="Skyliner",       icon="SKYLINER", mode="train", duration=51,
+    dict(label="Skyliner",       icon="🚆",       mode="train", duration=51,
          fare=1423, via=["Nippori", "Ueno"],
          hub="Ueno",   hub_lat=35.7141, hub_lng=139.7774),
-    dict(label="N'EX",           icon="NEX",      mode="train", duration=53,
+    dict(label="N'EX",           icon="🚆",       mode="train", duration=53,
          fare=3070, via=["Tokyo"],
          hub="Tokyo",  hub_lat=35.6812, hub_lng=139.7671),
-    dict(label="Keisei Express", icon="KEISEI",   mode="train", duration=78,
+    dict(label="Keisei Express", icon="🚆",       mode="train", duration=78,
          fare=1050, via=["Aoto", "Ueno"],
          hub="Aoto",   hub_lat=35.7567, hub_lng=139.8606),
     dict(label="Limousine Bus",  icon="🚌",       mode="bus",   duration=90,
@@ -365,10 +360,10 @@ NARITA_ROUTES_DB = [
          hub="Tokyo",  hub_lat=35.6812, hub_lng=139.7671),
 ]
 HANEDA_ROUTES_DB = [
-    dict(label="Keikyu",        icon="KEIKYU",   mode="train", duration=13,
+    dict(label="Keikyu",        icon="🚆",       mode="train", duration=13,
          fare=330,  via=["Sengakuji"],
          hub="Sengakuji",    hub_lat=35.6381, hub_lng=139.7397),
-    dict(label="Monorail",      icon="MONORAIL", mode="train", duration=18,
+    dict(label="Monorail",      icon="🚆",       mode="train", duration=18,
          fare=500,  via=["Hamamatsucho"],
          hub="Hamamatsucho", hub_lat=35.6555, hub_lng=139.7572),
     dict(label="Limousine Bus", icon="🚌",       mode="bus",   duration=35,
@@ -566,9 +561,9 @@ def build_mock() -> dict:
     return {
         "narita": dict(
             routes=[
-                RouteInfo("train","SKYLINER","Skyliner",       75, 1423, ["Nippori","Ueno"], is_recommended=True),
-                RouteInfo("train","NEX",     "N'EX",           80, 3070, ["Tokyo"]),
-                RouteInfo("train","KEISEI",  "Keisei Express", 90, 1050, ["Aoto","Ueno"]),
+                RouteInfo("train","🚆","Skyliner",       75, 1423, ["Nippori","Ueno"], is_recommended=True),
+                RouteInfo("train","🚆",     "N'EX",           80, 3070, ["Tokyo"]),
+                RouteInfo("train","🚆",  "Keisei Express", 90, 1050, ["Aoto","Ueno"]),
                 RouteInfo("bus",  "🚌",      "Limousine Bus",  95, 2800, ["Tokyo Sta."]),
                 RouteInfo("taxi", "🚕",      "Taxi",          104,27500, []),
             ],
@@ -576,8 +571,8 @@ def build_mock() -> dict:
         ),
         "haneda": dict(
             routes=[
-                RouteInfo("train","KEIKYU",  "Keikyu",          45,  330, ["Sengakuji"], is_recommended=True),
-                RouteInfo("train","MONORAIL","Monorail",         45,  500, ["Hamamatsucho"]),
+                RouteInfo("train","🚆",  "Keikyu",          45,  330, ["Sengakuji"], is_recommended=True),
+                RouteInfo("train","🚆","Monorail",         45,  500, ["Hamamatsucho"]),
                 RouteInfo("bus",  "🚌",      "Limousine Bus",   57, 1500, ["Tokyo Sta."]),
                 RouteInfo("taxi", "🚕",      "Taxi",             44,11800, []),
             ],
