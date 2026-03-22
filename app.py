@@ -192,6 +192,28 @@ if api_key:
 else:
     st.markdown('<div class="warning-box">ℹ <b>APIキー未設定</b> — 固定データベースで経由地を表示します（住所によらず同じ主要駅が表示されます）</div>', unsafe_allow_html=True)
 
+# ── APIキー確認ボタン ────────────────────────────────────────
+if api_key:
+    test_btn = st.button("🔍 APIキーをテストする", use_container_width=False)
+    if test_btn:
+        with st.spinner("NAVITIMEに接続中..."):
+            # 成田空港 → 東京駅 で簡易テスト
+            test_result = core.navitime_transit(
+                35.76419, 140.38605,   # 成田空港
+                35.68124, 139.76712,   # 東京駅
+                api_key, limit=1
+            )
+        if test_result:
+            st.success(f"✅ APIキー有効！ルート {len(test_result)} 件取得できました。")
+        else:
+            st.error(
+                "❌ APIキーが無効か、APIの呼び出しに失敗しました。\n\n"
+                "**確認事項：**\n"
+                "- RapidAPI の NAVITIME ページでキーをコピーし直してください\n"
+                "- Streamlit Cloud Secrets の `NAVITIME_API_KEY` の値を確認してください\n"
+                "- 無料プラン（500回/月）の上限に達していないか確認してください"
+            )
+
 generate_btn = st.button("🎨 画像を生成する", use_container_width=True)
 
 st.divider()
@@ -242,6 +264,22 @@ if generate_btn:
         route_source = "NAVITIME API" if api_key else "固定DB（APIキー未設定）"
         status.info(f"🗺 ルートを計算中（{route_source}）...")
         progress.progress(55, text=f"ルートを取得中 ({route_source})...")
+
+        # NAVITIMEテスト呼び出し（成功/失敗をユーザーに通知）
+        navitime_ok = False
+        if api_key:
+            test_r = core.navitime_transit(
+                35.76419, 140.38605, plat, plng, api_key, limit=1
+            )
+            if not test_r:
+                st.warning(
+                    "⚠ **NAVITIMEへの接続に失敗しました** — 固定DBに切り替えます。\n\n"
+                    "APIキーが正しいか確認するには、上の「🔍 APIキーをテストする」ボタンを使ってください。"
+                )
+            else:
+                navitime_ok = True
+                st.info("🔑 NAVITIME API から実際のルートを取得中...")
+
         route_data = core.gather_routes(plat, plng, api_key=api_key)
         for d in route_data.values():
             d["walk_min"]   = walk_min
@@ -265,7 +303,8 @@ if generate_btn:
         with res_col2:
             st.metric("🚉 最寄り駅", f"{near_en} ({walk_min}分)")
         with res_col3:
-            st.metric("📡 データ源", "NAVITIME API ✅" if api_key else "固定DB ⚠")
+            actual_source = "NAVITIME API ✅" if (api_key and navitime_ok) else "固定DB ⚠"
+            st.metric("📡 データ源", actual_source)
 
         st.image(png_bytes, caption=f"{prop_name} — Airport Access Sheet", use_container_width=True)
 
