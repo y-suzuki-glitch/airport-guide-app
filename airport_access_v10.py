@@ -262,9 +262,14 @@ def navitime_transit(
 def parse_navitime_route(item: dict) -> Optional[dict]:
     try:
         summary   = item.get("summary", {})
-        total_min = int(summary.get("move_time", 0)) // 60
+        # move_time は秒単位。ただし分単位で返す実装も確認済みのため両方対応
+        raw_time  = int(summary.get("move_time") or summary.get("total_time") or
+                        summary.get("required_time") or 0)
+        # 秒単位なら >300 になるはず。300以下なら分単位と判断
+        total_min = raw_time // 60 if raw_time > 300 else raw_time
         fare_info = summary.get("fare", {})
-        fare      = int(fare_info.get("iccard") or fare_info.get("total_fare") or 0)
+        fare      = int(fare_info.get("iccard") or fare_info.get("total_fare") or
+                        fare_info.get("total") or 0)
 
         sections      = item.get("sections", [])
         # NAVITIME API の section type は "train"/"bus" または "transit" など複数パターンがある
@@ -283,15 +288,23 @@ def parse_navitime_route(item: dict) -> Optional[dict]:
         last_leg  = transit_legs[-1]
         tp        = first_leg.get("transport", {})
         mode_type = first_leg.get("type", "train")
-        line_name = tp.get("line_name", tp.get("name", "Transit"))
+        # line_name: transport.name または transport.line_nameを優先
+        line_name = (tp.get("name") or tp.get("line_name") or
+                     tp.get("type_code") or "Transit")
 
         icon  = _choose_icon(line_name)
         label = _shorten_label(line_name)
 
         via = []
         for i, leg in enumerate(transit_legs):
-            dep_name = leg.get("from_node", {}).get("name", "")
-            arr_name = leg.get("to_node",   {}).get("name", "")
+            # from_node / to_node の両方を試行
+            dep_name = (leg.get("from_node") or {}).get("name", "")
+            arr_name = (leg.get("to_node")   or {}).get("name", "")
+            # 左記ない場合は node に直接 name が入るケースも対応
+            if not dep_name:
+                dep_name = leg.get("from", {}).get("name", "")
+            if not arr_name:
+                arr_name = leg.get("to", {}).get("name", "")
             if i == 0:
                 if len(transit_legs) > 1:
                     via.append(_clean_station(arr_name))
@@ -307,20 +320,22 @@ def parse_navitime_route(item: dict) -> Optional[dict]:
                 seen.add(v)
                 clean_via.append(v)
 
-        hub_node = last_leg.get("to_node", {})
+        hub_node = last_leg.get("to_node") or last_leg.get("to") or {}
         hub_name = _clean_station(hub_node.get("name", ""))
-        hub_lat  = hub_node.get("coord", {}).get("lat", 0)
-        hub_lng  = hub_node.get("coord", {}).get("lon", 0)
+        hub_lat  = (hub_node.get("coord") or {}).get("lat", 0)
+        hub_lng  = (hub_node.get("coord") or {}).get("lon", 0) or \
+                   (hub_node.get("coord") or {}).get("lng", 0)
 
         return dict(
             label=label, icon=icon,
-            mode="bus" if mode_type == "bus" else "train",
+            mode="bus" if ("bus" in mode_type.lower() or "バス" in line_name) else "train",
             duration=max(1, total_min), fare=fare,
             via=clean_via, hub=hub_name,
             hub_lat=hub_lat, hub_lng=hub_lng,
         )
     except Exception as e:
-        print(f"  [parse_navitime] {e}", file=sys.stderr)
+        import traceback
+        print(f"  [parse_navitime] {e}\n{traceback.format_exc()}", file=sys.stderr)
         return None
 
 
@@ -333,23 +348,39 @@ def _clean_station(name: str) -> str:
 
 def _shorten_label(name: str) -> str:
     TABLE = {
-        "スカイライナー": "Skyliner",
-        "成田エクスプレス": "N'EX",
-        "京成本線": "Keisei Exp.",
-        "京急本線": "Keikyu",
-        "東京モノレール": "Monorail",
-        "リムジンバス": "Limousine Bus",
-        "空港リムジン": "Limousine Bus",
-        "Skyliner": "Skyliner",
-        "Narita Express": "N'EX",
-        "Keisei Main Line": "Keisei",
-        "Keikyu Main Line": "Keikyu",
-        "Tokyo Monorail": "Monorail",
+        # --- 日本語 ---
+        "スカイライナー":       "Skyliner",
+        "成田エクスプレス":     "N'EX",
+        "成田エクスプレス号":   "N'EX",
+        "京成成田スカイアクセス線": "Keisei Sky",
+        "成田スカイアクセス":   "Keisei Sky",
+        "スカイアクセス":       "Keisei Sky",
+        "京成本線":             "Keisei Exp.",
+        "京成電鉄":             "Keisei",
+        "京急本線":             "Keikyu",
+        "京急空港線":           "Keikyu",
+        "京急エアポート":       "Keikyu Airport",
+        "東京モノレール":       "Monorail",
+        "モノレール":           "Monorail",
+        "リムジンバス":         "Limousine Bus",
+        "空港リムジン":         "Limousine Bus",
+        "エアポートバス":       "Airport Bus",
+        "JR":                  "JR",
+        # --- 英語 ---
+        "Skyliner":            "Skyliner",
+        "Narita Express":      "N'EX",
+        "Keisei Sky Access":   "Keisei Sky",
+        "Keisei Main Line":    "Keisei Exp.",
+        "Keikyu Main Line":    "Keikyu",
+        "Keikyu Airport":      "Keikyu Airport",
+        "Tokyo Monorail":      "Monorail",
+        "Limousine Bus":       "Limousine Bus",
     }
     for k, v in TABLE.items():
         if k in name:
             return v
-    return name[:14]
+    # 14文字以内に収める（日本語は7文字相当）
+    return name[:12]
 
 
 def _choose_icon(line_name: str) -> str:
@@ -534,12 +565,17 @@ def compute_routes_navitime(alat, alng, plat, plng, api_key, limit=5):
     if err:
         return [], err, []
     routes = []
+    seen_labels = set()  # 重複ラベルを除去
     for item in items:
         parsed = parse_navitime_route(item)
         if parsed:
+            lbl = parsed["label"]
+            if lbl in seen_labels:
+                continue   # 同じ路線名はスキップ
+            seen_labels.add(lbl)
             routes.append(RouteInfo(
-                mode=parsed["mode"], icon=parsed["icon"], label=parsed["label"],
-                duration_min=parsed["duration"], fare_yen=parsed["fare"],
+                mode=parsed["mode"], icon=parsed["icon"], label=lbl,
+                duration_min=max(1, parsed["duration"]), fare_yen=parsed["fare"],
                 via_stops=parsed["via"],
             ))
     return routes, "", items
