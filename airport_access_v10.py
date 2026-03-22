@@ -267,7 +267,14 @@ def parse_navitime_route(item: dict) -> Optional[dict]:
         fare      = int(fare_info.get("iccard") or fare_info.get("total_fare") or 0)
 
         sections      = item.get("sections", [])
-        transit_legs  = [s for s in sections if s.get("type") in ("train", "bus")]
+        # NAVITIME API の section type は "train"/"bus" または "transit" など複数パターンがある
+        _TRANSIT_TYPES = {"train", "bus", "transit", "railway", "subway", "monorail"}
+        transit_legs  = [s for s in sections if s.get("type", "") in _TRANSIT_TYPES
+                         or s.get("transport", {}).get("type", "") in _TRANSIT_TYPES]
+
+        if not transit_legs:
+            # フォールバック: transport キーを持つ全 section を使用
+            transit_legs = [s for s in sections if s.get("transport")]
 
         if not transit_legs:
             return None
@@ -522,10 +529,10 @@ def compute_routes_db(plat, plng, db) -> List[RouteInfo]:
 
 
 def compute_routes_navitime(alat, alng, plat, plng, api_key, limit=5):
-    """Returns (List[RouteInfo], error_str). error_str is '' on success."""
+    """Returns (List[RouteInfo], error_str, raw_items). error_str is '' on success."""
     items, err = navitime_transit(alat, alng, plat, plng, api_key, limit=limit)
     if err:
-        return [], err
+        return [], err, []
     routes = []
     for item in items:
         parsed = parse_navitime_route(item)
@@ -535,7 +542,7 @@ def compute_routes_navitime(alat, alng, plat, plng, api_key, limit=5):
                 duration_min=parsed["duration"], fare_yen=parsed["fare"],
                 via_stops=parsed["via"],
             ))
-    return routes, ""
+    return routes, "", items
 
 
 def compute_taxi(alat, alng, plat, plng) -> RouteInfo:
@@ -551,17 +558,19 @@ def compute_taxi(alat, alng, plat, plng) -> RouteInfo:
 def gather_routes(plat: float, plng: float, api_key: str = "") -> dict:
     data = {}
     navitime_errors = {}
+    navitime_raw    = {}   # デバッグ用 raw items
     for ak, (alat, alng) in AIRPORT_COORDS.items():
         routes: List[RouteInfo] = []
         if api_key:
             print(f"  [NAVITIME] Fetching routes from {ak}...", file=sys.stderr)
-            routes, err = compute_routes_navitime(alat, alng, plat, plng, api_key)
+            routes, err, raw_items = compute_routes_navitime(alat, alng, plat, plng, api_key)
+            navitime_raw[ak] = raw_items
             if err:
                 navitime_errors[ak] = err
                 print(f"  [NAVITIME] Error for {ak}: {err}", file=sys.stderr)
             elif not routes:
-                navitime_errors[ak] = "ルートが0件返ってきました"
-                print(f"  [NAVITIME] No routes for {ak}, using fallback DB", file=sys.stderr)
+                navitime_errors[ak] = f"ルートが0件（API応答: {len(raw_items)} items取得、パース失敗）"
+                print(f"  [NAVITIME] No routes for {ak} (raw={len(raw_items)}), using fallback DB", file=sys.stderr)
         if not routes:
             db = NARITA_ROUTES_DB if ak == "narita" else HANEDA_ROUTES_DB
             routes = compute_routes_db(plat, plng, db)
@@ -572,6 +581,7 @@ def gather_routes(plat: float, plng: float, api_key: str = "") -> dict:
         min(routes, key=sc).is_recommended = True
         data[ak] = dict(routes=routes, walk_min=0)
     data["_navitime_errors"] = navitime_errors
+    data["_navitime_raw"]    = navitime_raw
     return data
 
 
