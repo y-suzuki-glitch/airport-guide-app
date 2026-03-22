@@ -1,12 +1,11 @@
 """
-Airport Access Sheet Generator – Streamlit Web App
-====================================================
+Airport Access Sheet Generator – Streamlit Web App v10.1
+=========================================================
 Usage:
     pip install streamlit pillow requests
     streamlit run app.py
 
-Environment variables (optional):
-    NAVITIME_API_KEY=<your_rapidapi_key>
+For Streamlit Cloud: include packages.txt with 'fonts-noto-cjk'
 """
 
 import os
@@ -90,6 +89,14 @@ except ImportError as e:
     st.error(f"⚠ airport_access_v10.py が見つかりません: {e}")
     st.stop()
 
+# ── Check font availability (show warning if missing) ────────
+if not core._FONT_BOLD:
+    st.warning(
+        "⚠ 日本語フォントが見つかりませんでした。\n\n"
+        "Streamlit Cloudの場合：リポジトリに **packages.txt** を追加して "
+        "`fonts-noto-cjk` と記載し、アプリを再デプロイしてください。"
+    )
+
 # ── Sidebar: API key ─────────────────────────────────────────
 with st.sidebar:
     st.header("⚙ 設定")
@@ -102,7 +109,6 @@ with st.sidebar:
         placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         help="設定すると NAVITIME から実際のルートを取得します。未設定でも固定DBで動作します。",
     )
-
     st.divider()
     st.markdown("### APIキー取得方法")
     st.markdown("""
@@ -113,6 +119,13 @@ with st.sidebar:
     st.divider()
     st.markdown("**APIなし（固定DB）でも動作します**")
     st.markdown("経由地は主要路線の固定データを使用。精度はAPIより劣ります。")
+
+    st.divider()
+    st.markdown("### フォント状態")
+    if core._FONT_BOLD:
+        st.success(f"✅ フォント OK\n\n`{os.path.basename(core._FONT_BOLD)}`")
+    else:
+        st.error("❌ 日本語フォントなし\n\npackages.txt に `fonts-noto-cjk` を追加して再デプロイ")
 
 # ── Main form ────────────────────────────────────────────────
 col1, col2 = st.columns(2)
@@ -132,16 +145,13 @@ with col2:
         help="画像フッターに表示されます",
     )
 
-# API key from sidebar
 api_key = api_key_input.strip()
 
-# Info messages
 if api_key:
     st.markdown('<div class="info-box">🔑 <b>NAVITIME APIキー設定済み</b> — 実際のルートを自動取得します（経由地も正確に表示）</div>', unsafe_allow_html=True)
 else:
     st.markdown('<div class="warning-box">ℹ <b>APIキー未設定</b> — 固定データベースで経由地を表示します（主要路線のみ）</div>', unsafe_allow_html=True)
 
-# Generate button
 generate_btn = st.button("🎨 画像を生成する", use_container_width=True)
 
 st.divider()
@@ -186,7 +196,7 @@ if generate_btn:
             wr = core.osrm_walk(plat, plng, s["lat"], s["lon"])
             walk_min = wr[0] if wr else 10
         else:
-            near_jp = "最寄り駅"; near_en = "Nearest Sta."
+            near_jp = "Nearest"; near_en = "Nearest Sta."
 
         # 3. Routes
         route_source = "NAVITIME API" if api_key else "固定DB"
@@ -207,10 +217,8 @@ if generate_btn:
         status.empty()
         progress.empty()
 
-        # ── Show results ─────────────────────────────────────
         st.success("✅ 画像の生成が完了しました！")
 
-        # Result info
         res_col1, res_col2, res_col3 = st.columns(3)
         with res_col1:
             st.metric("📍 座標", f"{plat:.4f}, {plng:.4f}")
@@ -219,11 +227,9 @@ if generate_btn:
         with res_col3:
             st.metric("📡 データ源", route_source)
 
-        # Preview
         st.image(png_bytes, caption=f"{prop_name} — Airport Access Sheet", use_container_width=True)
 
-        # Download button
-        filename = f"{prop_name.replace(' ', '_')}_airport_access.png"
+        filename = f"{(prop_name or 'property').replace(' ', '_')}_airport_access.png"
         st.download_button(
             label="⬇ PNG画像をダウンロード",
             data=png_bytes,
@@ -244,7 +250,7 @@ if generate_btn:
 st.divider()
 st.markdown("""
 <div style="text-align:center; color:#888; font-size:0.85rem;">
-Airport Access Sheet Generator v10.0 &nbsp;|&nbsp;
+Airport Access Sheet Generator v10.1 &nbsp;|&nbsp;
 Nominatim / Overpass / OSRM (無料API) &nbsp;|&nbsp;
 <a href="https://rapidapi.com/navitimejapan-navitimejapan/api/navitime-route-totalnavi" target="_blank">NAVITIME RapidAPI</a>
 </div>
