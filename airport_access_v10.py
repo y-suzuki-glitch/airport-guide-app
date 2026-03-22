@@ -162,6 +162,7 @@ _TWEMOJI_B64: Dict[str, str] = {
     '🚌': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAq1BMVEVHcEzM1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t0pLzMpLzMvNDhJTE9YWVtVrO4/bpFXg6X/rDOTlZj0kAw2PEBydXiAgoWTlZemqKq1t7m8vsCPkZSipKZ2d3gvMDAAAAClpqgjJCQMDAyAgoWAgoUwNTmGlZ6ZqrWAgoWAgoW8vsC8vsC8vsCEhokAAAAAAAAAAAAAAAAAAAC1c97cAAAAOXRSTlMAIECAn7/P/48wEGDfr++//////////////////////////////////++f////IDDvIJ//v2DPIO97RqWiAAABc0lEQVR4AezTxQHDMAxAUYeZzd5/znLo6ErF6A3wb5/9IkIIIUEYxUmaeUrzgm2UVVxnz0rCOVPEGUxTsouyycDSS6loMwTJ3AFjXX8xjBMU6+9GrNCAFerBIc65mEOSe5L7EJ9D3BuFLiik1JeG4ItsQ0DfGRIoof5BgxgzhyxWyOGELKAzh4w5N0sWNhJDUQx8fWyYman/yi4OkxeEN4KAR/6ozKiabozomqpwuLsWmUgWdJNXMHctsowTFi0h7lqkGRc0UsJd2cewHXfEsfmc3rkoMvHl+e6C7+Gb7BN1UaQjC9yNAKn+XERdCRUVpRhjw8efx1tA3VCiafds/IuTNE1ivNlsv6kbSRZitg6ydAKpw9bG3DATyYvxDdXJHCZ4N0aeioxnt8hlpKyKKUwX1qKaF53doipl5RoK5717na5w3rvNeQMb4bx32/ORtsL54HbugU44n9x+2LOhv4Q/uX23jXHLfnTbBlFD9oe4/5g/tOYi7WbQdJMAAAAASUVORK5CYII=",
     '🚕': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAq1BMVEVHcEwpLzP/zE3/zE0pLzMpLzMpLzP/zE3/zE3/zE3/zE3/zE3/zE3/zE0pLzP/zE3/zE3/zE30kAzM1t3M1t30kAzM1t3M1t30kAzM1t30kAzM1t3/zE3M1t3M1t3/zE3M1t30kAxVrO7/zE0pLzNcY2i4wchfVjpRTDjkuEqvkUNgruSVuLI2OTXqyGHVxHX0yleAtMa/wIlqsNqfuqjKwn+1vpOKtrzM1t0+VMsDAAAAIXRSTlMAYM8Qv88g3+9gMCBQv+9AgJ/vvzBQEM+v74Bgr48gcIAmSmOXAAABnklEQVR42u2V23KCMBBABVFASqXVXuxdgoCKWnvN/39Zs+K4yThlI+GhM+U8sePxiFkZOy0tLS0tLf+N8Q3no7F552nCBZNr49Aj33FvHBqVoReDhG+z33kIdDNByCrxfL3OwGME3kDrfjxG4uqEbDBfi2WMMEFcsizWMPl0JwJvgxk1BKm11i0FTPCJDQwdKGAkT+lCSOtlZSjW+W5dOOltXB3aiDEiQj4cUEyEvsQYEiFXON9U6EOMdnVnCJuPqdAWZvqo38jQO7m2LhhFVQjn4fG7n21WCzfqKsfistp4A3XfTZTOmBku/pAN8XHdZtjlDV1OjekAV9OGQndNhW6bCrnMnPLRaig0ZBKLLBFkC1WjDQhFOM7zZE8+lzXaEE+HK1mr5MBK9mhDfcryRCJnCG0oG1vAq7OU83QGV3gKtBF2ZC0Di+8AL2MIZfhKKBGkpZbCNUMIw4Yfo6rxPZJGG14gltZAyBYdWL/hVwuP//8d9Sidjr6hYqnLtU41kF4i0TvZQPrnaJ33axjo9Q6f1q9lIJYDkmNpGH+cH1WFLxnhHOQhAAAAAElFTkSuQmCC",
     '🚆': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAwFBMVEVHcExYWVunqaynqaylp6qnqaynqayco6qnqaynqaycnaCnqaynqaynqaynqaynqaxYWVuAgoVtb3FcXV9kZWd3eHqHiYyTlZh8foGdn6KPkJPYrW38rjy7qpLpq1GMjpHKwbMiZpmnqazm5+jDxMbQ0tSHmadcg6HX2drg4eJ4kaV5u+0zbpthse6rrbBBdp62uLqLwuzU4On5u2BUf6Cfpausz+uvsbSZyOvxzpnr3cjL3OnC2OpVrO7/rDOipKcM8leCAAAAEHRSTlMAr4Aga+8wEN+/UECPz5+vV9SdoQAAA1lJREFUeF6U1WmK4zAQBeDQcSdtkuk+Q5V279l7nbn/rQZVRkaEKUl+P0LA8PmVXKAVm121r2uMUtf7ardalm31FgnDLeLeqm0xs34l4CaVdWKOs0rexdd1WZs9tZCREWly8NS+oNXmxTsx80h56WWTdZ59HSUSUb7Uc0baegetSMail9LT0cdSIhNFny/l7LwziWwmL+1yhZyI8/0dfqO4TKX1XOj43rY//+KB8L9t349zJX6dqvmESIihKPMpVSxEGy1KIEEbzkI1TZaFwmw1C9FOl0G030lIEdTzUE+QykKWoGvPQf2VIJuFxD3Hw/+hw1HcUwjRKvWPUE9LVABdPBTl63poA9Qerl8eiKALC2mCsgmQZqEGcVgANSxklkGGhbplo3UsBHoJpIFztmAQXZnjEE0C6hBtGWQRO+BHgwZlGSSxAR7qYMSpDJpwBP6wzwC67JAcaoAzC2mAEVUJpHAE0CxET4tmu9E7eYge27xjqVACQgPQlFyQDYDBFIRngEv+yr4AnDEFkWQGl3bcYMjB5HWEJnvekwaDyevoCX30+LDen+5hqUeNPk8stMEQGYyP02/K6eNzdkI2Kza/AvRHEkNKyIko+bfysultEIbBMB3txigTJl98rO0m99RL1esuy///V1PsCkRLcPYcU+mp/RInMHo+sjhbHLldzj+/D/ycLzcc2Ypvfsz1+/AoOnxfkRDe/TjuiePnTHX4PCIjRE0UiHPXiS0ntkwU2TolJlJmAjUmUWcSbwUmUKR8Q6AE70WZLYpssxQ2FgXsJsVTAggmC1BmCWFbANNjlN4A2ISwK/QGQDuM4DSA8VhJnj0imUC1uECrgDyIe6kxFgWU8zjDu6AhEe0kcWgbIMjV3mW+JQvTiEP7SmlqANAaluB13fOmFE5Iql91BhYwHf9KJ6TQWEt/3DVNpx6q0iqs0mK72lyOAapENYRV5i7TRlleo5IMBvK1a81xmHH4YTi+2OLD6kMFKBAq9NHhzXc8R2kinsddHmushcAXrvIFY97vscOak2wEzLgFsFy+0RwErCSyEHCLt1vNSU8FySVx3vVSY92sILGkjpt7vjp6HkiRcbD7pwulmpLGRKa8q/lphjjAf0UwkGk/b8xzggMmMfBz8WNzf8MyuZqhlVX/AAAAAElFTkSuQmCC",
+    '⭐': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAM1BMVEVHcEz/rDP/rDP/rDP/rDP/rDP/rDP/rDP/rDP/rDP/rDP/rDP/rDP/rDP/rDP/rDP/rDPIzIGKAAAAEXRSTlMAMK/v/78gcM8QYFDfgECfjzPxc0MAAAFZSURBVHgB7djVYsUwCIBhEoin8v4vO2WeM0jpfN/t0Z+mCif45zyid2DmkG6gA6tAdwIYRWIRbBKxBDaZWLaXsWguY8lcxoK9jBVzGavmMubtZayYy1g1lzFvL2PFXMaquYx5exkr5jJWzWXM28tUba2TSW/8PWTW4FYnsw43Cp2gnPVFp6WdO2xoSCbYgBVPBr7Ak4R0ECZ4wWU6JDt4baEDFhhYO03qKwwVb5gyYw3nN/pYDKQUoniAVUkgclm90QXFq6cskL8IVAqJCmhUElXQ2Ei0gQaSCEGhkULTl9nbuvZoL3Ck4kCyk8oOkkwqGQSRlA4cRTAlnD+O5OEhw+XZtnJpqvvkjlsvHpjX13l15lAUCjwqYeagNB7oeEOod9js3j+cN+Wy3gu8UXbl4g7i6a+hakjp1ZQHStAsyYj8HsXixyg+5MlOcQrt0oFkTSuI1rrCt3cNofAlUpDr+CkAAAAASUVORK5CYII=",
 }
 
 _TWEMOJI_CACHE: Dict[str, Image.Image] = {}
@@ -672,12 +673,17 @@ def draw_col(img, draw, route: RouteInfo, cx, y0, col_w,
     paste_em(img, route.icon, icon_lx + ICON_SZ // 2, icon_cy, ICON_SZ)
 
     lbl = route.label if len(route.label) <= 13 else route.label[:12] + "..."
-    if route.is_recommended:
-        lbl = "* " + lbl
     f_lbl = jp(19, True)
     lbl_y = y + 4
-    draw.text((text_lx, lbl_y), lbl, font=f_lbl,
-              fill=REC_C if route.is_recommended else (30, 30, 42))
+    STAR_SZ = 18
+    if route.is_recommended:
+        star_em = _load_twemoji('⭐', STAR_SZ)
+        if star_em:
+            img.paste(star_em, (text_lx, lbl_y + 1), star_em)
+        star_offset = STAR_SZ + 3
+        draw.text((text_lx + star_offset, lbl_y), lbl, font=f_lbl, fill=REC_C)
+    else:
+        draw.text((text_lx, lbl_y), lbl, font=f_lbl, fill=(30, 30, 42))
 
     dm  = route.duration_min
     dur = f"{dm//60}H{dm%60}min" if dm >= 60 else f"{dm}min"
