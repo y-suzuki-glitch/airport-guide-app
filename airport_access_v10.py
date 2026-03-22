@@ -224,13 +224,14 @@ def navitime_transit(
     departure_time: str = None,
     limit: int = 5,
 ) -> List[dict]:
+    """Returns (items_list, error_message). error_message is empty string on success."""
     if not api_key:
-        return []
+        return [], "APIキーが空です"
     if not departure_time:
         departure_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     url     = "https://navitime-route-totalnavi.p.rapidapi.com/route_transit"
     headers = {
-        "X-RapidAPI-Key":  api_key,
+        "X-RapidAPI-Key":  api_key.strip(),
         "X-RapidAPI-Host": "navitime-route-totalnavi.p.rapidapi.com",
     }
     params  = {
@@ -244,11 +245,18 @@ def navitime_transit(
     }
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=20)
-        resp.raise_for_status()
-        return resp.json().get("items", [])
+        if resp.status_code == 403:
+            return [], f"403 Forbidden: APIキーが無効です（RapidAPIでキーを確認してください）"
+        if resp.status_code == 429:
+            return [], f"429 Too Many Requests: 月間利用上限（500回）に達しました"
+        if resp.status_code != 200:
+            return [], f"HTTP {resp.status_code}: {resp.text[:200]}"
+        items = resp.json().get("items", [])
+        return items, ""
+    except requests.exceptions.Timeout:
+        return [], "タイムアウト: NAVITIMEサーバーへの接続がタイムアウトしました"
     except Exception as e:
-        print(f"  [NAVITIME] API error: {e}", file=sys.stderr)
-        return []
+        return [], f"接続エラー: {e}"
 
 
 def parse_navitime_route(item: dict) -> Optional[dict]:
@@ -513,10 +521,13 @@ def compute_routes_db(plat, plng, db) -> List[RouteInfo]:
     return results
 
 
-def compute_routes_navitime(alat, alng, plat, plng, api_key, limit=5) -> List[RouteInfo]:
-    raw = navitime_transit(alat, alng, plat, plng, api_key, limit=limit)
+def compute_routes_navitime(alat, alng, plat, plng, api_key, limit=5):
+    """Returns (List[RouteInfo], error_str). error_str is '' on success."""
+    items, err = navitime_transit(alat, alng, plat, plng, api_key, limit=limit)
+    if err:
+        return [], err
     routes = []
-    for item in raw:
+    for item in items:
         parsed = parse_navitime_route(item)
         if parsed:
             routes.append(RouteInfo(
@@ -524,7 +535,7 @@ def compute_routes_navitime(alat, alng, plat, plng, api_key, limit=5) -> List[Ro
                 duration_min=parsed["duration"], fare_yen=parsed["fare"],
                 via_stops=parsed["via"],
             ))
-    return routes
+    return routes, ""
 
 
 def compute_taxi(alat, alng, plat, plng) -> RouteInfo:
@@ -539,12 +550,17 @@ def compute_taxi(alat, alng, plat, plng) -> RouteInfo:
 
 def gather_routes(plat: float, plng: float, api_key: str = "") -> dict:
     data = {}
+    navitime_errors = {}
     for ak, (alat, alng) in AIRPORT_COORDS.items():
         routes: List[RouteInfo] = []
         if api_key:
             print(f"  [NAVITIME] Fetching routes from {ak}...", file=sys.stderr)
-            routes = compute_routes_navitime(alat, alng, plat, plng, api_key)
-            if not routes:
+            routes, err = compute_routes_navitime(alat, alng, plat, plng, api_key)
+            if err:
+                navitime_errors[ak] = err
+                print(f"  [NAVITIME] Error for {ak}: {err}", file=sys.stderr)
+            elif not routes:
+                navitime_errors[ak] = "ルートが0件返ってきました"
                 print(f"  [NAVITIME] No routes for {ak}, using fallback DB", file=sys.stderr)
         if not routes:
             db = NARITA_ROUTES_DB if ak == "narita" else HANEDA_ROUTES_DB
@@ -555,6 +571,7 @@ def gather_routes(plat: float, plng: float, api_key: str = "") -> dict:
             return r.duration_min * 0.5 + (r.fare_yen or 99999) * 0.0008
         min(routes, key=sc).is_recommended = True
         data[ak] = dict(routes=routes, walk_min=0)
+    data["_navitime_errors"] = navitime_errors
     return data
 
 
