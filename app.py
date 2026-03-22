@@ -1,11 +1,7 @@
 """
-Airport Access Sheet Generator – Streamlit Web App v10.1
+Airport Access Sheet Generator – Streamlit Web App v10.2
 =========================================================
-Usage:
-    pip install streamlit pillow requests
-    streamlit run app.py
-
-For Streamlit Cloud: include packages.txt with 'fonts-noto-cjk'
+v10.2: Streamlit Secrets対応 (NAVITIME_API_KEY を secrets.toml で永続化)
 """
 
 import os
@@ -72,6 +68,14 @@ st.markdown("""
         margin-bottom: 1rem;
         font-size: 0.92rem;
     }
+    .success-box {
+        background: #efffef;
+        border-left: 4px solid #1a7a3a;
+        padding: 0.8rem 1rem;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+        font-size: 0.92rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -89,7 +93,7 @@ except ImportError as e:
     st.error(f"⚠ airport_access_v10.py が見つかりません: {e}")
     st.stop()
 
-# ── Check font availability (show warning if missing) ────────
+# ── Check font availability ──────────────────────────────────
 if not core._FONT_BOLD:
     st.warning(
         "⚠ 日本語フォントが見つかりませんでした。\n\n"
@@ -97,25 +101,61 @@ if not core._FONT_BOLD:
         "`fonts-noto-cjk` と記載し、アプリを再デプロイしてください。"
     )
 
-# ── Sidebar: API key ─────────────────────────────────────────
+# ── APIキー取得（優先順位: secrets → 環境変数 → サイドバー入力）────
+def _get_saved_api_key() -> str:
+    """Streamlit Secrets → 環境変数 → 空文字 の順で取得"""
+    # ① Streamlit Cloud Secrets (secrets.toml)
+    try:
+        key = st.secrets.get("NAVITIME_API_KEY", "")
+        if key:
+            return key
+    except Exception:
+        pass
+    # ② 環境変数
+    return os.environ.get("NAVITIME_API_KEY", "")
+
+saved_key = _get_saved_api_key()
+
+# ── Sidebar ──────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙ 設定")
     st.markdown("### NAVITIME APIキー")
-    env_key = os.environ.get("NAVITIME_API_KEY", "")
-    api_key_input = st.text_input(
-        "RapidAPI キー（任意）",
-        value=env_key,
-        type="password",
-        placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-        help="設定すると NAVITIME から実際のルートを取得します。未設定でも固定DBで動作します。",
-    )
-    st.divider()
-    st.markdown("### APIキー取得方法")
-    st.markdown("""
-1. [RapidAPI](https://rapidapi.com/navitimejapan-navitimejapan/api/navitime-route-totalnavi) にアクセス
+
+    if saved_key:
+        st.success("✅ APIキー設定済み（Secrets）\n\n経由地を正確に取得します")
+        api_key_input = saved_key
+        st.markdown(
+            "<small>キーは Streamlit Cloud の Secrets に保存されています。"
+            "変更する場合は Streamlit Cloud ダッシュボードから更新してください。</small>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.warning("⚠ APIキー未設定")
+        api_key_input = st.text_input(
+            "RapidAPI キー（任意）",
+            value="",
+            type="password",
+            placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            help="入力したキーはこのセッション中のみ有効です。永続化するには下記の手順でSecretsに登録してください。",
+        )
+        with st.expander("🔑 APIキーを永続化する方法（推奨）"):
+            st.markdown("""
+**Streamlit Cloud Secrets に登録すると毎回入力不要になります：**
+
+1. [Streamlit Cloud](https://share.streamlit.io/) にログイン
+2. アプリの **「︙」メニュー → Settings → Secrets** を開く
+3. 以下を貼り付けて **Save** をクリック：
+```toml
+NAVITIME_API_KEY = "ここにRapidAPIキーを貼り付け"
+```
+4. アプリが自動再起動して有効になります
+
+**APIキーの取得：**
+1. [RapidAPI NAVITIME](https://rapidapi.com/navitimejapan-navitimejapan/api/navitime-route-totalnavi) にアクセス
 2. 無料プランに登録（500回/月）
-3. `X-RapidAPI-Key` をコピーして上に貼り付け
+3. `X-RapidAPI-Key` をコピー
 """)
+
     st.divider()
     st.markdown("**APIなし（固定DB）でも動作します**")
     st.markdown("経由地は主要路線の固定データを使用。精度はAPIより劣ります。")
@@ -145,12 +185,12 @@ with col2:
         help="画像フッターに表示されます",
     )
 
-api_key = api_key_input.strip()
+api_key = api_key_input.strip() if isinstance(api_key_input, str) else ""
 
 if api_key:
-    st.markdown('<div class="info-box">🔑 <b>NAVITIME APIキー設定済み</b> — 実際のルートを自動取得します（経由地も正確に表示）</div>', unsafe_allow_html=True)
+    st.markdown('<div class="success-box">🔑 <b>NAVITIME APIキー設定済み</b> — 実際の経由駅を自動取得します ✅</div>', unsafe_allow_html=True)
 else:
-    st.markdown('<div class="warning-box">ℹ <b>APIキー未設定</b> — 固定データベースで経由地を表示します（主要路線のみ）</div>', unsafe_allow_html=True)
+    st.markdown('<div class="warning-box">ℹ <b>APIキー未設定</b> — 固定データベースで経由地を表示します（住所によらず同じ主要駅が表示されます）</div>', unsafe_allow_html=True)
 
 generate_btn = st.button("🎨 画像を生成する", use_container_width=True)
 
@@ -199,7 +239,7 @@ if generate_btn:
             near_jp = "Nearest"; near_en = "Nearest Sta."
 
         # 3. Routes
-        route_source = "NAVITIME API" if api_key else "固定DB"
+        route_source = "NAVITIME API" if api_key else "固定DB（APIキー未設定）"
         status.info(f"🗺 ルートを計算中（{route_source}）...")
         progress.progress(55, text=f"ルートを取得中 ({route_source})...")
         route_data = core.gather_routes(plat, plng, api_key=api_key)
@@ -225,7 +265,7 @@ if generate_btn:
         with res_col2:
             st.metric("🚉 最寄り駅", f"{near_en} ({walk_min}分)")
         with res_col3:
-            st.metric("📡 データ源", route_source)
+            st.metric("📡 データ源", "NAVITIME API ✅" if api_key else "固定DB ⚠")
 
         st.image(png_bytes, caption=f"{prop_name} — Airport Access Sheet", use_container_width=True)
 
@@ -250,7 +290,7 @@ if generate_btn:
 st.divider()
 st.markdown("""
 <div style="text-align:center; color:#888; font-size:0.85rem;">
-Airport Access Sheet Generator v10.1 &nbsp;|&nbsp;
+Airport Access Sheet Generator v10.2 &nbsp;|&nbsp;
 Nominatim / Overpass / OSRM (無料API) &nbsp;|&nbsp;
 <a href="https://rapidapi.com/navitimejapan-navitimejapan/api/navitime-route-totalnavi" target="_blank">NAVITIME RapidAPI</a>
 </div>
