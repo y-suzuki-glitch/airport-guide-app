@@ -129,7 +129,7 @@ def jp(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 
 
 # ────────────────────────────────────────────────────────────
-# PIL-only icon system (NO emoji font required)
+# Custom colored badge icons for named train lines
 # ────────────────────────────────────────────────────────────
 _BADGES: Dict[str, Tuple] = {
     "SKYLINER":  ((210,  55,  25), "SKYLINE"),
@@ -137,9 +137,6 @@ _BADGES: Dict[str, Tuple] = {
     "KEISEI":    ((195,  35, 115), "KEISEI"),
     "KEIKYU":    ((195,  15,  35), "KEIKYU"),
     "MONORAIL":  ((  0, 110, 175), "MONO"),
-    "🚌":        (( 25, 130,  55), "BUS"),
-    "🚕":        ((175, 130,   0), "TAXI"),
-    "🚆":        (( 60,  60, 180), "TRAIN"),
 }
 
 
@@ -148,83 +145,56 @@ def _pil_badge(text: str, color: Tuple, size: int) -> Image.Image:
     d   = ImageDraw.Draw(img)
     r   = size // 5
     d.rounded_rectangle([1, 3, size-1, size-3], radius=r, fill=color)
-    # White text
     font_sz = max(7, size // 4)
-    f = jp(font_sz, True)
+    f  = jp(font_sz, True)
     bb = d.textbbox((0, 0), text, font=f)
     tw, th = bb[2] - bb[0], bb[3] - bb[1]
     d.text(((size - tw) // 2, (size - th) // 2 + 1), text, font=f, fill=(255, 255, 255))
     return img
 
 
-def _pil_airplane(size: int) -> Image.Image:
-    """Simple airplane icon drawn with PIL."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d   = ImageDraw.Draw(img)
-    c   = (45, 115, 210)
-    m   = size // 2
-    r   = int(size * 0.36)
-    d.ellipse([m-r, m-r, m+r, m+r], fill=c)
-    # Body
-    d.polygon([(m, m-r+2), (m-6, m+4), (m+6, m+4)], fill=(255, 255, 255))
-    # Left wing
-    d.polygon([(m-r+2, m+2), (m, m+8), (m, m-2)], fill=(255, 255, 255))
-    # Right wing
-    d.polygon([(m+r-2, m+2), (m, m+8), (m, m-2)], fill=(255, 255, 255))
-    return img
+# ────────────────────────────────────────────────────────────
+# ── Twemoji PNGs embedded as base64 (no emoji font needed) ─────
+_TWEMOJI_B64: Dict[str, str] = {
+    '✈': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAwFBMVEVHcExVrO5VrO5VrO5VrO5VrO5VrO5VrO7M1t1VrO5VrO5VrO7M1t1mdX9mdX9VrO7M1t3M1t1VrO5Vq+vM1t3M1t1VrO5mdX/M1t3M1t3M1t1mdX9VrO5mdX9mdX+kyOPM1t1mdX+kyOPM1t2vusLM1t1kfY+RweakyONVrO5mdX/M1t1se4XF095cr+22zuCMmaKmsrpksey2wcijyOOEvehrtOuCj5m/ytGTn6hekbdig5uYxOTG0Nd6uelgiqlNiWZyAAAAKXRSTlMAEM+AIGCfv59w7zDvMO9AMGCvjxDPUCBwj79g30AQ7yCfv4C/UHC/j7N3QhkAAAKlSURBVHhezdbZdpswEIDhMWBjwA4J3h07W5O2Et73rH3/t2pAEUI5Gg+Um/639vmQZMAD/0fdp9G4F8fjH9WUYS+WVZDumnGu8T87w1asRQHt6cDoiOUUh645v2hjzozz2eoknB7pJBKyHp4024ozohwhmfe1XR8TKV3TiHKENMDOZ/0prRLoiXJEU5MjpVkCdSlH1MZ/ryPnubMOI5995btpUecl6TXtJ6iGsd46hYbCqbMiuUm/4m9t+SzbmcMKt4+NNSHNq+q07gTUr+SIExK5xZwD4jRBVusUcuaoo3I6VkVHVes3JhUdleNFiLMhnWILWywJx1xgW9UdtUnaGRKI2qR/1vkNxQs7E8Z2ZmfvQqmCW8RhJaEm5gioojM/sJLQCHNKQleYI6Dqjqiis9ywryo6C1YSuqQcJmYV0mlRDlOzSmlnl3eYnDDKO7dM65WWukanGRogMatgTs/oAPgGiE9LOiMAaJigdjnnSo0bOnQNWJlz+u5ATYd0py42PnHdhm2HYSAf+PcVP+UcUZSH/miOg/zDb2d8lXcMk8uLdIxDzVINh+9ybLk0X/YlcTBoL5xnzvlWOSorDyUOsrWFGBVWn87a5ECHqToA2EfsLXOejQ4ETGWDXkM5G+lkB93rgp6PQPox7ShHXhZ5aQeWXBDpQB+DRLY8odQ54g7UzkMQJBPpXF/PCExFGCTz/A/NWR4c8/coCJyH+Dlz5nvGQvPXSAjG68x5WzAMAouEHuV9uNvo9wl2ByPOzUX6XMzfBINCIQXd84vH8cMHy2qAOf88NOD3NwCOz8jDjM5DN4PU82iorkFobgZNEMhBIexFAUhWIQhsEvKKQWBRUM1PnQig4OaIRfeBil56A7nNzK9BH/ACOwAoKtWheuB4nlMK+AtMy4GynxGGywAAAABJRU5ErkJggg==",
+    '🏠': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAS1BMVEVHcEygBB6gBB6gBB5ckTtmdX9ckTtmdX9mdX+gBB5ckTtra3agBB5mdX//6LafoJRckTv/zE2pp5egBB58S1tVrO6zr5upm2nBaU/BI5AjAAAADXRSTlMAgCCvv48Qn4C/IK9gbf8AgQAAAOpJREFUeF7t09kKwjAQheFEmy7qpIvr+z+pFSqHmiYMM7lQzH8b+GACx+So5IhcDqehuSaLA0nnQNI5kNRO30NSOd5D0jmQdI5A2u27udPakUj2/KpbORIJEByJBAiORAIERyQBgiORAF3gBBBTsgyHJVmGw5Js2uEv2KYd/oItw2FJR4bDkRqWA0nrQNI6kIQOS3JRZ0ot2AVQ1PHpBQdQ1PHRl34Taokmv9mN6A7g4+jWhAG4Lr2pcYw8+AApUIEiAUK/CBWoQI8l9URCqEAFQv8I1dUgrqoNgiORDBpUHXJB2U/Tf/Z39gTttax73q0rOQAAAABJRU5ErkJggg==",
+    '🚶': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAvVBMVEVHcEwpQFL7zlf/11r+01f+qjf9qUpCicH+vUtAhr4qZ5f9xVUvR1r+yU4pLzMpLzP/rDP801kpLzMuapoqZ5f6dD7/rDP+2VspLzNCicEqZ5f6dD76eT//rDP/rDNCicFCicH7y1P3dED/3F0pLzNCicEqZ5f6dD5CicH6dD4yZ5H6dD5CicEpSWH5ylX6dD4pLzP6ylX/3F0qZ5f/v0f7ikT8m0n/rDP7gEFCicEpMzo2d6orSF7+wlM2XHp5K8iqAAAAL3RSTlMAJYP7QL8o7hAtQBQQa369pKLP1r9AgLnsSHjvq+tgj2Dvz9dMup+Az3D3UHDPz53UV2sAAAIsSURBVHhevdXbcqJAEAbgRpBgFlAhUbOeolE3yR5mhrOa5P0faxkccEj2hu6q/W+8sOqrv6eHGvhvcVaT/mhik53VMq+ytEhtRvk1KwI0ybUsHTzUz/V4eGjUgkZ4yEp0qE+AoihXFhkyo4Q+GjiRTELfPzxFVQR1/TCOVGjbB/hmKiiRy6fEU5C5AWK8upNNlRzLskXK2MIBcn4ymTm5kz1nF4naactUFjTnnjWhDbe4Qi8kiF2zJU6WZYWSKNALY+9RJN4r6J4A/ZBQmQrq06CogbIeGRIXaGNTocsZpWJMgFIJZQoSDv6LbUMW/h5lEioqqBDCw0OJOiIZIfB7qyZL6ZBjqkJEyJFPm1lcoTHhZTNTdoWmuD7K0aANei5RMA3CXaTpZ4dtUGuzS+dpoTtzT4g/uPfa2mrO1oaxnA0xWQ+MOD4fVdYA0OthVj8FOMRxXEM3gIs1tWAQa9BxAOjcSaiZ7QHt3MYtaE0ppM/2TCqkV3IphXToEecYytEuAO64D7UT7hsJdQNea+j24dhImGOqnQPAcyPtCZABMLhppF9oKASQEuGYQiVBW9qjrxF8ktZ4SEnYe/m9hqiSgkL4KvkuArqDL9KZB0bnj1+HQF3xD85nNAgeK+jE+ZAIwbp03spCLhWC8LV0gh2QoYDLPpj1/245Li/TqY/hn95kOG9BPu900Dt+yUn+GDpfOkGHwYZcy679x9DtNFdFBf6MB0O9kT/z/wn8BcdCxhbiMA66AAAAAElFTkSuQmCC",
+    '🚌': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAq1BMVEVHcEzM1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t3M1t0pLzMpLzMvNDhJTE9YWVtVrO4/bpFXg6X/rDOTlZj0kAw2PEBydXiAgoWTlZemqKq1t7m8vsCPkZSipKZ2d3gvMDAAAAClpqgjJCQMDAyAgoWAgoUwNTmGlZ6ZqrWAgoWAgoW8vsC8vsC8vsCEhokAAAAAAAAAAAAAAAAAAAC1c97cAAAAOXRSTlMAIECAn7/P/48wEGDfr++//////////////////////////////////++f////IDDvIJ//v2DPIO97RqWiAAABc0lEQVR4AezTxQHDMAxAUYeZzd5/znLo6ErF6A3wb5/9IkIIIUEYxUmaeUrzgm2UVVxnz0rCOVPEGUxTsouyycDSS6loMwTJ3AFjXX8xjBMU6+9GrNCAFerBIc65mEOSe5L7EJ9D3BuFLiik1JeG4ItsQ0DfGRIoof5BgxgzhyxWyOGELKAzh4w5N0sWNhJDUQx8fWyYman/yi4OkxeEN4KAR/6ozKiabozomqpwuLsWmUgWdJNXMHctsowTFi0h7lqkGRc0UsJd2cewHXfEsfmc3rkoMvHl+e6C7+Gb7BN1UaQjC9yNAKn+XERdCRUVpRhjw8efx1tA3VCiafds/IuTNE1ivNlsv6kbSRZitg6ydAKpw9bG3DATyYvxDdXJHCZ4N0aeioxnt8hlpKyKKUwX1qKaF53doipl5RoK5717na5w3rvNeQMb4bx32/ORtsL54HbugU44n9x+2LOhv4Q/uX23jXHLfnTbBlFD9oe4/5g/tOYi7WbQdJMAAAAASUVORK5CYII=",
+    '🚕': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAq1BMVEVHcEwpLzP/zE3/zE0pLzMpLzMpLzP/zE3/zE3/zE3/zE3/zE3/zE3/zE0pLzP/zE3/zE3/zE30kAzM1t3M1t30kAzM1t3M1t30kAzM1t30kAzM1t3/zE3M1t3M1t3/zE3M1t30kAxVrO7/zE0pLzNcY2i4wchfVjpRTDjkuEqvkUNgruSVuLI2OTXqyGHVxHX0yleAtMa/wIlqsNqfuqjKwn+1vpOKtrzM1t0+VMsDAAAAIXRSTlMAYM8Qv88g3+9gMCBQv+9AgJ/vvzBQEM+v74Bgr48gcIAmSmOXAAABnklEQVR42u2V23KCMBBABVFASqXVXuxdgoCKWnvN/39Zs+K4yThlI+GhM+U8sePxiFkZOy0tLS0tLf+N8Q3no7F552nCBZNr49Aj33FvHBqVoReDhG+z33kIdDNByCrxfL3OwGME3kDrfjxG4uqEbDBfi2WMMEFcsizWMPl0JwJvgxk1BKm11i0FTPCJDQwdKGAkT+lCSOtlZSjW+W5dOOltXB3aiDEiQj4cUEyEvsQYEiFXON9U6EOMdnVnCJuPqdAWZvqo38jQO7m2LhhFVQjn4fG7n21WCzfqKsfistp4A3XfTZTOmBku/pAN8XHdZtjlDV1OjekAV9OGQndNhW6bCrnMnPLRaig0ZBKLLBFkC1WjDQhFOM7zZE8+lzXaEE+HK1mr5MBK9mhDfcryRCJnCG0oG1vAq7OU83QGV3gKtBF2ZC0Di+8AL2MIZfhKKBGkpZbCNUMIw4Yfo6rxPZJGG14gltZAyBYdWL/hVwuP//8d9Sidjr6hYqnLtU41kF4i0TvZQPrnaJ33axjo9Q6f1q9lIJYDkmNpGH+cH1WFLxnhHOQhAAAAAElFTkSuQmCC",
+    '🚆': "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAMAAABiM0N1AAAAwFBMVEVHcExYWVunqaynqaylp6qnqaynqayco6qnqaynqaycnaCnqaynqaynqaynqaynqaxYWVuAgoVtb3FcXV9kZWd3eHqHiYyTlZh8foGdn6KPkJPYrW38rjy7qpLpq1GMjpHKwbMiZpmnqazm5+jDxMbQ0tSHmadcg6HX2drg4eJ4kaV5u+0zbpthse6rrbBBdp62uLqLwuzU4On5u2BUf6Cfpausz+uvsbSZyOvxzpnr3cjL3OnC2OpVrO7/rDOipKcM8leCAAAAEHRSTlMAr4Aga+8wEN+/UECPz5+vV9SdoQAAA1lJREFUeF6U1WmK4zAQBeDQcSdtkuk+Q5V279l7nbn/rQZVRkaEKUl+P0LA8PmVXKAVm121r2uMUtf7ardalm31FgnDLeLeqm0xs34l4CaVdWKOs0rexdd1WZs9tZCREWly8NS+oNXmxTsx80h56WWTdZ59HSUSUb7Uc0baegetSMail9LT0cdSIhNFny/l7LwziWwmL+1yhZyI8/0dfqO4TKX1XOj43rY//+KB8L9t349zJX6dqvmESIihKPMpVSxEGy1KIEEbzkI1TZaFwmw1C9FOl0G030lIEdTzUE+QykKWoGvPQf2VIJuFxD3Hw/+hw1HcUwjRKvWPUE9LVABdPBTl63poA9Qerl8eiKALC2mCsgmQZqEGcVgANSxklkGGhbplo3UsBHoJpIFztmAQXZnjEE0C6hBtGWQRO+BHgwZlGSSxAR7qYMSpDJpwBP6wzwC67JAcaoAzC2mAEVUJpHAE0CxET4tmu9E7eYge27xjqVACQgPQlFyQDYDBFIRngEv+yr4AnDEFkWQGl3bcYMjB5HWEJnvekwaDyevoCX30+LDen+5hqUeNPk8stMEQGYyP02/K6eNzdkI2Kza/AvRHEkNKyIko+bfysultEIbBMB3txigTJl98rO0m99RL1esuy///V1PsCkRLcPYcU+mp/RInMHo+sjhbHLldzj+/D/ycLzcc2Ypvfsz1+/AoOnxfkRDe/TjuiePnTHX4PCIjRE0UiHPXiS0ntkwU2TolJlJmAjUmUWcSbwUmUKR8Q6AE70WZLYpssxQ2FgXsJsVTAggmC1BmCWFbANNjlN4A2ISwK/QGQDuM4DSA8VhJnj0imUC1uECrgDyIe6kxFgWU8zjDu6AhEe0kcWgbIMjV3mW+JQvTiEP7SmlqANAaluB13fOmFE5Iql91BhYwHf9KJ6TQWEt/3DVNpx6q0iqs0mK72lyOAapENYRV5i7TRlleo5IMBvK1a81xmHH4YTi+2OLD6kMFKBAq9NHhzXc8R2kinsddHmushcAXrvIFY97vscOak2wEzLgFsFy+0RwErCSyEHCLt1vNSU8FySVx3vVSY92sILGkjpt7vjp6HkiRcbD7pwulmpLGRKa8q/lphjjAf0UwkGk/b8xzggMmMfBz8WNzf8MyuZqhlVX/AAAAAElFTkSuQmCC",
+}
+
+_TWEMOJI_CACHE: Dict[str, Image.Image] = {}
 
 
-def _pil_house(size: int) -> Image.Image:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d   = ImageDraw.Draw(img)
-    m   = size // 2
-    s   = int(size * 0.38)
-    # Roof (triangle)
-    d.polygon([(m, 3), (m - s, m), (m + s, m)], fill=(185, 100, 50))
-    # Wall
-    wall_top = m - 1
-    d.rectangle([m - s + 4, wall_top, m + s - 4, size - 4],
-                fill=(240, 200, 140), outline=(160, 120, 60), width=1)
-    # Door
-    dw = max(4, size // 7)
-    dh = max(6, size // 5)
-    dx = m - dw // 2
-    dy = size - 4 - dh
-    d.rectangle([dx, dy, dx + dw, size - 4], fill=(120, 70, 30))
-    return img
-
-
-def _pil_walk(size: int) -> Image.Image:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d   = ImageDraw.Draw(img)
-    c   = (30, 130, 60)
-    m   = size // 2
-    r   = max(3, size // 7)
-    # Head
-    d.ellipse([m - r, 1, m + r, 1 + r * 2], fill=c)
-    # Body
-    d.line([(m, 1 + r * 2), (m, size // 2 + 2)], fill=c, width=max(2, size // 10))
-    # Left leg
-    d.line([(m, size // 2 + 2), (m - size // 5, size - 3)], fill=c, width=max(2, size // 10))
-    # Right leg
-    d.line([(m, size // 2 + 2), (m + size // 5, size - 3)], fill=c, width=max(2, size // 10))
-    # Arm
-    d.line([(m, size // 3 + 2), (m + size // 4, size // 2 - 1)], fill=c, width=max(1, size // 12))
-    return img
+def _load_twemoji(ch: str, size: int) -> Optional[Image.Image]:
+    """Load a Twemoji PNG from embedded base64, scaled to size."""
+    if ch not in _TWEMOJI_B64:
+        return None
+    import base64 as _b64
+    key = (ch, size)
+    if key not in _TWEMOJI_CACHE:
+        raw = _b64.b64decode(_TWEMOJI_B64[ch])
+        img = Image.open(io.BytesIO(raw)).convert("RGBA")
+        _TWEMOJI_CACHE[key] = img.resize((size, size), Image.LANCZOS)
+    return _TWEMOJI_CACHE[key]
 
 
 def emoji_img(ch: str, size: int = 28) -> Image.Image:
-    """Return a PIL image for the given icon character/code."""
+    """Return a PIL image for the given icon character/code.
+    Priority: custom badge → embedded Twemoji PNG → PIL fallback
+    """
+    # ① Colored badge for named train lines
     if ch in _BADGES:
         color, txt = _BADGES[ch]
         return _pil_badge(txt, color, size)
-    if ch == "✈":
-        return _pil_airplane(size)
-    if ch in ("🏠", "🏡"):
-        return _pil_house(size)
-    if ch in ("🚶", "🚶‍♂️", "🚶‍♀️"):
-        return _pil_walk(size)
-    # Generic colored circle with letter
+
+    # ② Embedded Twemoji PNG (airplane, house, bus, taxi, walk, train)
+    twemoji_img = _load_twemoji(ch, size)
+    if twemoji_img is not None:
+        return twemoji_img
+
+    # ③ PIL fallback
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d   = ImageDraw.Draw(img)
     d.ellipse([1, 1, size-2, size-2], fill=(100, 100, 200))
@@ -242,9 +212,7 @@ def paste_em(img: Image.Image, ch: str, cx: int, cy: int, size: int = 28):
     img.paste(em, (cx - w // 2, cy - h // 2), em)
 
 
-# ────────────────────────────────────────────────────────────
-# NAVITIME API
-# ────────────────────────────────────────────────────────────
+
 UA = "AirportAccessImageTool/10.1"
 
 
