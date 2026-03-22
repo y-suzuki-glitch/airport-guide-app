@@ -1,5 +1,3 @@
-streamlit
-requests
-pandas
-# 画像処理ライブラリを追加
-Pillow
+streamlit>=1.32.0
+Pillow>=10.0.0
+requests>=2.31.0
