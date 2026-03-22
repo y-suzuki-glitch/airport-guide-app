@@ -176,13 +176,28 @@ if generate_btn:
 
         # NAVITIMEエラーがあれば画面に表示
         navitime_errors = route_data.pop("_navitime_errors", {})
+        navitime_raw    = route_data.pop("_navitime_raw", {})
         if api_key and navitime_errors:
             err_msgs = "\n".join(f"- {k}: {v}" for k, v in navitime_errors.items())
             st.warning(
                 f"⚠ **NAVITIME API エラー** — 固定DBにフォールバックしました\n\n"
-                f"エラー詳細：\n{err_msgs}\n\n"
-                "サイドバーの「🔍 このキーをテスト」でAPIキーを確認してください。"
+                f"エラー詳細：\n{err_msgs}"
             )
+            # RAW JSON をデバッグ表示
+            if navitime_raw:
+                import json as _json
+                with st.expander("🔬 NAVITIMEレスポンス RAW JSON（開発者向け）"):
+                    for airport_key, raw_items in navitime_raw.items():
+                        st.markdown(f"**{airport_key.upper()} — {len(raw_items)} items取得**")
+                        if raw_items:
+                            # 最初の item の sections type 一覧を表示
+                            item0 = raw_items[0]
+                            sections0 = item0.get("sections", [])
+                            types_found = [s.get("type","?") for s in sections0]
+                            st.markdown(f"sections types: `{types_found}`")
+                            st.code(_json.dumps(item0, ensure_ascii=False, indent=2)[:2000])
+                        else:
+                            st.markdown("_items が空 (API から0件返却)_")
             actual_source = "固定DB（APIエラー）"
         elif api_key:
             actual_source = "NAVITIME API ✅"
