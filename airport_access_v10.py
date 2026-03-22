@@ -241,7 +241,7 @@ def navitime_transit(
         "limit":      limit,
         "datum":      "wgs84",
         "coord_unit": "degree",
-        "lang":       "en",
+        # "lang": "en",  # 無料プランでは Multilingual オプション使用不可のため除外
     }
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=20)
